@@ -37,8 +37,8 @@ bit shift_lfsrC()
 
 bit majority(bit A, bit B, bit C)
 {
-	return A & B | A & C | B & C;
-	// return A & B ^ A & C ^ B & C;
+	return A&B | A&C | B&C;
+	// return A&B ^ A&C ^ B&C;
 }
 
 void main()
@@ -51,11 +51,11 @@ void main()
 	for(int i = 0; i < len; i = i + 1) {
 		// result[i] = regA[18] ^ regB[21] ^ regC[22];
 		maj = majority(regA[midA], regB[midB], regC[midC]);
-		if(!(maj^regA[midA]))
+		if(!(maj ^ regA[midA]))
 			shift_lfsrA();
-		if(!(maj^regB[midB]))
+		if(!(maj ^ regB[midB]))
 			shift_lfsrB();
-		if(!(maj^regC[midC]))
+		if(!(maj ^ regC[midC]))
 			shift_lfsrC();
 		result[i] = regA[18] ^ regB[21] ^ regC[22];
 	}
