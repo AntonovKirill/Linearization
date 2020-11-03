@@ -1,0 +1,19 @@
+Дан AIG файл enc.aig.
+
+1. Получить КНФ enc.cnf с помощью aig_to_cnf (aig_to_cnf.cpp)
+./aig_to_cnf -i=enc.aig -o=enc.cnf [-k=512]
+
+2. Получить список relations.cnf дизъюнктов для проверки с помощью rel (rel.cpp)
+./rel enc.aig relations.cnf
+
+3. Запустить проверку дизъюнктов решателем minisat с помощью learnts_gen1 (windows) (learnts_gen.cpp)
+./learnts_gen -cnf=enc.cnf -relations=relations.cnf -bin=minisat
+Будут созданы файлы learnts, error, unknown, out. Надо проследить, чтобы создание этих файлов не удалило прежние файлы с такими же именами! learnts содержит список дополнительных выполнимых дизъюнктов.
+
+4. Запустить classify (classify_learnts.cpp) для классификации дизъюнктов по множеству их переменных. Запускать программу из папки, содержащей файл learnts, содержащий список 2- и 3-литеральных дизъюнктов.
+./
+Будут созданы файлы learnts_by_key, statistics.
+
+5. Запустить learnts_to_linear (learnts_to_linear.cpp) для формирования списка выполнимых линейных соотношений. Важно запускать программу из той папки, в которой находится файл learnts_by_key.
+./learnts_to_linear
+Результатом является файл linear_equations с описанием множества выведенных линейных соотношений.
