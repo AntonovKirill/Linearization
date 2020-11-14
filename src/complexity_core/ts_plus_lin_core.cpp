@@ -624,7 +624,7 @@ void read_core_vars(const string &filename)
 void read_start_point_file(string &filename, vector <char> &point)
 {
 	if (!filename.empty()) {
-		clog << "read point (" << filename << ") ... ";
+		clog << "read point '" << filename << "' ... ";
 		clog.flush();
 
 		point.resize(guessed_vars_cnt, 0);
