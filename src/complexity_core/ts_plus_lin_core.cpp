@@ -1,4 +1,5 @@
 #include <bits/stdc++.h>
+#include "omp.h"
 
 #define all(x) (x).begin(), (x).end()
 
@@ -7,35 +8,47 @@ typedef unsigned int uint;
 
 using namespace std;
 
-// mutex log_mtx;
+int N = 0;
+int cores = thread::hardware_concurrency();
+int points_cnt = 0;
 
-mt19937_64 gen(time(0));
+const int GREED = 1;
+const int PROB = 2;
+const int OPTIMAL = 3;
+
+random_device rd;
+mt19937 generator(rd());
+
+mutex mtx, log_mtx, gen_mtx;
+
+set <vector <char>> tabu_list_1;
+set <pair <double, vector <char>>> tabu_list_2;
+map <vector <char>, int> start_number_set;
+
+struct cmp_prob
+{
+	bool operator() (const pair <double, vector <char>> &a, const pair <double, vector <char>> &b)
+	{
+		return a.first > b.first ||
+			(a.first == b.first && (a.second.size() < b.second.size() ||
+			(a.second.size() == b.second.size() && a.second < b.second)));
+	}
+};
+
+set <pair <double, vector <char>>, cmp_prob> tabu_list_2_probability;
+
 
 /// УРАВНЕНИЕ and
 /// x ^ y & z = 0 ( x = y & z )
 /// ПОД x, y, z ПОНИМАЮТСЯ ПЕРЕМЕННЫЕ
 /// С НОМЕРАМИ x, y, z СООТВЕТСТВЕННО
-class and_equation {
+class and_equation
+{
 public:
 	uint x;
 	uint y;
 	uint z;
 };
-
-bool operator== (const and_equation &a, const and_equation &b)
-{
-	return a.y == b.y && a.z == b.z;
-}
-
-bool operator< (const and_equation &a, const and_equation &b)
-{
-	return (((a.y & 1) << 1) ^ (a.z & 1)) < (((b.y & 1) << 1) ^ (b.z & 1));
-}
-
-char random_bool()
-{
-	return gen() & 1;
-}
 
 
 /// МНОЖЕСТВО ВСЕХ УРАВНЕНИЙ
@@ -49,6 +62,15 @@ vector <uint> key_vars;
 vector <uint> iv_vars;
 vector <uint> input_vars;
 vector <uint> output_vars;
+vector <uint> guessed_vars;
+vector <uint> core_vars;
+
+
+/// МАССИВЫ ЗНАЧЕНИЙ ВХОДНЫХ / ВЫХОДНЫХ ПЕРЕМЕННЫХ
+vector <vector <char>> guessed_interp;
+vector <vector <char>> core_interp;
+vector <vector <char>> iv_interp;
+vector <vector <char>> output_interp;
 
 
 /// КОЛИЧЕСТВО УРАВНЕНИЙ
@@ -64,21 +86,31 @@ uint input_vars_cnt = 0;
 uint key_vars_cnt = 0;
 uint iv_vars_cnt = 0;
 uint output_vars_cnt = 0;
+uint guessed_vars_cnt = 0;
 uint latches_cnt = 0;
+uint core_vars_cnt = 0;
+
+
+map <vector <char>, double> complexity_set;
+map <vector <char>, double> probability_set;
 
 
 /// ЧТЕНИЕ ПАРАМЕТРОВ ИЗ ТЕРМИНАЛА
 void init(int argc, char *argv[],
 		string &in_filename, string &out_filename,
 		string &sub_filename, string &core_filename,
-		string &lin_filename, string &learnts_filename)
+		string &lin_filename, string &learnts_filename,
+		string &start_point_filename, int &mode)
 {
-	in_filename		 = "";
-	out_filename	 = "";
-	sub_filename	 = "";
-	core_filename	 = "";
-	lin_filename	 = "";
-	learnts_filename = "";
+	in_filename          = "";
+	out_filename         = "";
+	sub_filename         = "";
+	core_filename        = "";
+	lin_filename         = "";
+	learnts_filename     = "";
+	start_point_filename = "";
+	mode = 0;
+	
 
 	for (uint i = 1; i < (uint) argc; ++i) {
 		string param;
@@ -88,14 +120,17 @@ void init(int argc, char *argv[],
 			param.insert(param.end(), argv[i][j]);
 
 		if (param == "--help" || param == "-h") {
-			cout << "  -h, --help											  Вывод этой справки и выход.\n";
-			cout << "  -i, --input <file>									  Файл с описанием И-Не графа.\n";
-			cout << "  -o, --output <file>									  Файл для вывода упрощённого И-Не графа.\n";
-			cout << "  -s, --substitution <file>	default=substitution	  Файл с описанием подстановки.\n";
-			cout << "  -c, --core <file>			default=core			  Файл с описанием множества переменных ядра.\n";
-			cout << "  -L, --linear <file>			default=linear			  Файл дополнительных линейных ограничений.\n";
-			cout << "  -l, --learnts <file>			default=learnts			  Файл дополнительных дизъюнктов.\n";
-			cout << "  -k, --key-size <size>		default=input_vars_cnt	  Число бит ключа.\n";
+			cout << "  -h, --help                                             Вывод этой справки и выход.\n";
+			cout << "  -i, --input <file>                                     Файл с описанием И-Не графа.\n";
+			cout << "  -o, --output <file>                                    Файл для вывода упрощённого И-Не графа.\n";
+			cout << "  -N, --sample-size <size>                               Размер выборки.\n";
+			cout << "  -s, --substitution <file>    default=substitution      Файл с описанием подстановки.\n";
+			cout << "  -c, --core <file>            default=core              Файл с описанием множества переменных ядра.\n";
+			cout << "  --linear <file>              default=linear            Файл дополнительных линейных ограничений.\n";
+			cout << "  --learnts <file>             default=learnts           Файл дополнительных дизъюнктов.\n";
+			cout << "  -k, --key-size <size>        default=input_vars_cnt    Число бит ключа.\n";
+			cout << "  -p, --start-point <file>     default=point             Файл с описанием начальной точки поиска.\n";
+			cout << "  -m, --mode <g|p|o>           default=o                 Стратегия поиска. g - greed, p - probability, o - optimal.";
 			exit(0);
 		}
 		else if (param == "--input" || param == "-i") {
@@ -109,6 +144,12 @@ void init(int argc, char *argv[],
 				out_filename = (string) (argv[++i]);
 			else
 				out_filename = (string) (argv[i] + j + 1);
+		}
+		else if (param == "--sample-size" || param == "-N") { /// СДЕЛАТЬ ПРОВЕРКУ НА НЕОТРИЦАТЕЛЬНОСТЬ
+			if (argv[i][j] == 0)
+				N = atoi(argv[++i]);
+			else
+				N = atoi(argv[i] + j + 1);
 		}
 		else if (param == "--key-size" || param == "-k") {
 			if (argv[i][j] == 0)
@@ -128,21 +169,43 @@ void init(int argc, char *argv[],
 			else
 				core_filename = (string) (argv[i] + j + 1);
 		}
-		else if (param == "--linear" || param == "-L") {
+		else if (param == "--linear") {
 			if (argv[i][j] == 0)
 				lin_filename = (string) (argv[++i]);
 			else
 				lin_filename = (string) (argv[i] + j + 1);
 		}
-		else if (param == "--learnts" || param == "-l") {
+		else if (param == "--learnts") {
 			if (argv[i][j] == 0)
 				learnts_filename = (string) (argv[++i]);
 			else
 				learnts_filename = (string) (argv[i] + j + 1);
 		}
+		else if (param == "--start-point" || param == "-p") {
+			if (argv[i][j] == 0)
+				start_point_filename = (string) argv[++i];
+			else
+				start_point_filename = (string) (argv[i] + j + 1);
+		}
+		else if (param == "--mode" || param == "-m") { /// СДЕЛАТЬ ПРОВЕРКУ
+			string m;
+			if (argv[i][j] == 0)
+				m = (string) argv[++i];
+			else
+				m = (string) (argv[i] + j + 1);
+
+			if (m == "g")
+				mode = GREED;
+			else if (m == "p")
+				mode = PROB;
+			else if (m == "o")
+				mode = OPTIMAL;
+			else {
+				clog << "warning: void init(): parameter " << param << ": unknown value: '" << m << "'\n";
+			}
+		}
 		else {
 			clog << "warning: void init(): unknown parameter: " << param << "\n";
-			exit(0);
 		}
 	}
 	if (in_filename.empty()) {
@@ -153,6 +216,11 @@ void init(int argc, char *argv[],
 	if (out_filename.empty()) {
 		cerr << "error: void init(): " <<
 			"parameter -o (--output) is required\n";
+		exit(0);
+	}
+	if (N <= 0) {
+		cerr << "error: void init(): " <<
+			"value of parameter -N (--sample-size) must be a positive number\n";
 		exit(0);
 	}
 	if (key_vars_cnt < 0) {
@@ -179,6 +247,10 @@ void init(int argc, char *argv[],
 		learnts_filename = "learnts";
 		clog << "warning: void init(): " <<
 			"learnts filename has been set to default value \'learnts\'\n";
+	}
+	if (mode == 0) {
+		mode = OPTIMAL;
+		clog << "warning: void init(): mode has been set to default value 'o'\n";
 	}
 }
 
@@ -215,29 +287,30 @@ void log_learnts(const map <vector <uint>, set <vector <char>>> &learnts) {
 	}
 }
 */
-
-void print_new_linear_constraints(const set <vector <uint>> &linear_constraints,
-		const string &filename, const vector <uint> &vars_map)
+/*
+void print_linear_constraints(const set <vector <uint>> &linear_constraints,
+		const string &filename)
 {
 	ofstream fout(filename.data());
 	for (auto &v: linear_constraints) {
 		for (auto x: v)
-			fout << vars_map[x] << " ";
+			fout << x << " ";
 		fout << "\n";
 	}
 	fout.close();
 }
-
-/// PRINTS new_learnts IN DIMACS FORMAT
-void print_new_learnts(const map <vector <uint>, set <vector <char>>> &learnts,
-		const string &filename, const vector <uint> &vars_map)
+*/
+/*
+/// PRINTS learnts IN DIMACS FORMAT
+void print_learnts(const map <vector <uint>, set <vector <char>>> &learnts,
+		const string &filename)
 {
 	ofstream fout(filename.data());
 	for (auto &p: learnts) {
-		uint n = p.first.size();
+		uint sz = p.first.size();
 		for (auto &v: p.second) {
-			for (uint i = 0; i < n; ++i) {
-				int x = vars_map[p.first[i] ^ v[i]];
+			for (uint i = 0; i < sz; ++i) {
+				int x = p.first[i] ^ v[i];
 				fout << (x & 1 ? - x / 2 : x / 2) << " ";
 			}
 			fout << "0\n";
@@ -245,25 +318,7 @@ void print_new_learnts(const map <vector <uint>, set <vector <char>>> &learnts,
 	}
 	fout.close();
 }
-
-
-void print_vars_map(const string &filename, const vector <uint> &vars_map)
-{
-	ofstream fout(filename.data());
-	for (auto x: vars_map)
-		fout << x << "\n";
-}
-
-
-void print_new_vars(const vector <uint> &v, const vector <uint> &vars_map,
-		const string &filename)
-{
-	ofstream fout(filename.data());
-	for (auto x: v)
-		fout << vars_map[x] << endl;
-	fout.close();
-}
-
+*/
 
 char add_learnts(map <vector <uint>, set <vector <char>>> &learnts,
 		vector <uint> &key_value)
@@ -339,6 +394,53 @@ void reduce_constraints(set <vector <uint>> &linear_constraints)
 }
 
 
+void resize_all(vector <vector <char> > &vec, int cnt)
+{
+	// #pragma omp parallel for
+	for (int i = 0; i < (int) vec.size(); ++i) {
+		vec[i].resize(cnt);
+	}
+}
+
+
+uint bin_set_size(const vector <char> &a)
+{
+	uint res = 0;
+	for (char i: a)
+		res += i;
+
+	return res;
+}
+
+
+bool operator== (const and_equation &a, const and_equation &b)
+{
+	return a.y == b.y && a.z == b.z;
+}
+
+bool operator< (const and_equation &a, const and_equation &b)
+{
+	return (((a.y & 1) << 1) ^ (a.z & 1)) < (((b.y & 1) << 1) ^ (b.z & 1));
+}
+
+
+int random_int()
+{
+	gen_mtx.lock();
+	int res = generator();
+	gen_mtx.unlock();
+	return res;
+}
+
+bool random_bool()
+{
+	gen_mtx.lock();
+	bool res = generator() & 1;
+	gen_mtx.unlock();
+	return res;
+}
+
+
 /********************
  * AIG-file reading *
  ********************/
@@ -380,6 +482,10 @@ void read_input(ifstream &fin)
 	iv_vars.clear();
 	iv_vars.resize(iv_vars_cnt);
 
+	iv_interp.resize(N);
+
+	resize_all(iv_interp, iv_vars_cnt);
+
 	for (uint i = 0; i < key_vars_cnt; ++i) {
 		fin >> key_vars[i];
 		input_vars[i] = key_vars[i];
@@ -397,6 +503,9 @@ void read_output(ifstream &fin)
 	clog << " reading output ... ";
 
 	output_vars.resize(output_vars_cnt);
+
+	output_interp.resize(N);
+	resize_all(output_interp, output_vars_cnt);
 
 	for (uint i = 0; i < output_vars_cnt; ++i)
 		fin >> output_vars[i];
@@ -455,7 +564,6 @@ void read_linear_constraints(set <vector <uint>> &linear_constraints,
 	clog << "ok" << endl;
 }
 
-
 /// READ LEARNTS FROM THE FILE.
 /// DATA ARE PRESENTED IN DIMACS FORMAT (WITHOUT HEADER).
 void read_learnts(map <vector <uint>, set <vector <char>>> &learnts,
@@ -491,17 +599,63 @@ void read_learnts(map <vector <uint>, set <vector <char>>> &learnts,
 }
 
 
-void read_core_vars(const string &filename, vector <uint> &core_vars)
+void read_core_vars(const string &filename)
 {
-	clog << " reading core variables from \'" << filename << "\' ... ";
+	clog << "reading core variables from \'" << filename << "\' ... ";
 	ifstream fin(filename.data());
 
 	uint x;
 	while (fin >> x)
 		core_vars.push_back(x);
+	core_vars_cnt = core_vars.size();
 
 	fin.close();
 	clog << "ok" << endl;
+
+	core_interp.resize(N, vector <char> (core_vars_cnt));
+	guessed_interp.resize(N);
+
+	guessed_vars = core_vars;
+	guessed_vars_cnt = core_vars_cnt;
+}
+
+
+/// ЧТЕНИЕ ФАЙЛА С ОПИСАНИЕМ НАЧАЛЬНОЙ ТОЧКИ ПОИСКА
+void read_start_point_file(string &filename, vector <char> &point)
+{
+	if (!filename.empty()) {
+		clog << "read point (" << filename << ") ... ";
+		clog.flush();
+
+		point.resize(guessed_vars_cnt, 0);
+		ifstream fin(filename.data());
+		uint u;
+		while (fin >> u) {
+			uint i;
+			for (i = 0; i < guessed_vars_cnt; ++i) {
+				if ((guessed_vars[i] & -2) == (u & -2))
+					break;
+			}
+			if (i < guessed_vars_cnt) {
+				point[i] = 1;
+			}
+			else {
+				guessed_vars.push_back(u);
+				++guessed_vars_cnt;
+				point.push_back(1);
+			}
+		}
+
+		guessed_vars_cnt = guessed_vars.size();
+		resize_all(guessed_interp, guessed_vars_cnt);
+
+		fin.close();
+		clog << "ok" << endl;
+	}
+	else {
+		resize_all(guessed_interp, guessed_vars_cnt);
+		point = vector <char> (guessed_vars_cnt, 1);
+	}
 }
 
 
@@ -509,10 +663,8 @@ void read_core_vars(const string &filename, vector <uint> &core_vars)
  * simplification methods *
  **************************/
 void define_variable_value(uint var, char val,
-		vector <char> &vars_values, vector <char> &is_def,
-		const vector <uint> &dsu)
+		vector <char> &vars_values, vector <char> &is_def)
 {
-	var = dsu[var];
 	if (is_def[var]) {
 		if (vars_values[var] == val)
 			return;
@@ -525,6 +677,14 @@ void define_variable_value(uint var, char val,
 	is_def[var ^ 1] = 1;
 	vars_values[var] = val;
 	vars_values[var ^ 1] = (val ^ 1);
+}
+
+
+void define_variable_value(uint var, char val,
+		vector <char> &vars_values, vector <char> &is_def,
+		const vector <uint> &dsu)
+{
+	define_variable_value(dsu[var], val, vars_values, is_def);
 }
 
 
@@ -568,19 +728,27 @@ void join_sets(uint x, uint y,
 	classes[y ^ 1].clear();
 }
 
-
+/*
 void vars_random_assignment(const vector <uint> &vars,
 		vector <char> &vars_values, vector <char> &is_def, vector <uint> &dsu)
 {
 	for (uint var: vars)
 		define_variable_value(var, random_bool(), vars_values, is_def, dsu);
 }
+*/
 
+void vars_random_assignment(const vector <uint> &vars,
+		vector <char> &vars_values, vector <char> &is_def)
+{
+	for (uint var: vars)
+		define_variable_value(var, random_bool(), vars_values, is_def);
+}
 
+/*
 void read_substitution(const string &filename, vector <char> &vars_values,
 		vector <char> &is_def, vector <uint> &dsu)
 {
-	clog << " reading substitution from \'" << filename << "\' ... ";
+	clog << "reading substitution from \'" << filename << "\' ... ";
 	ifstream fin(filename.data());
 
 	uint x;
@@ -590,7 +758,7 @@ void read_substitution(const string &filename, vector <char> &vars_values,
 	fin.close();
 	clog << "ok" << endl;
 }
-
+*/
 
 void find_linear_constraints(set <vector <uint>> &linear_constraints)
 {
@@ -851,7 +1019,7 @@ char learnts_propagation(vector <uint> &key, vector <vector <char>> &negations,
 		char &useless)
 {
 	useless = 1;
-	uint n = key.size();
+	uint sz = key.size();
 	vector <vector <uint>> disjuncts;
 	vector <uint> variables = key;
 	for (auto &x: variables)
@@ -881,13 +1049,13 @@ char learnts_propagation(vector <uint> &key, vector <vector <char>> &negations,
 
 	for (auto x: variables) {
 		if (is_def[x])
-			--n;
-	}	
-	if (n == 0) {
+			--sz;
+	}   
+	if (sz == 0) {
 		cerr << "error: void learnts_propagation(): empty disjunct can't be solved\n"; // TODO: throw runtime_error("...")
 		exit(0);
 	}
-	else if (n == 1) {
+	else if (sz == 1) {
 		for (auto &d: disjuncts) {
 			uint x = dsu[d[0]];
 			define_variable_value(x, 1, vars_values, is_def, dsu);
@@ -895,7 +1063,7 @@ char learnts_propagation(vector <uint> &key, vector <vector <char>> &negations,
 		// useless = 1;
 		return 1;
 	}
-	else if (n == 2) {
+	else if (sz == 2) {
 		if (disjuncts.size() == 1) {
 			auto d = disjuncts[0];
 			uint x = dsu[d[0]], y = dsu[d[1]];
@@ -954,8 +1122,8 @@ char learnts_propagation(vector <uint> &key, vector <vector <char>> &negations,
 			exit(0);
 		}
 	}
-	else { // n >= 3
-		// clog << "warning: void learnts_propagation(): n >= 3. There are no methods to use it.\n"; // TODO: throw smth
+	else { // sz >= 3
+		// clog << "warning: void learnts_propagation(): sz >= 3. There are no methods to use it.\n"; // TODO: throw smth
 		useless = 0;
 		return 0;
 	}
@@ -1087,7 +1255,7 @@ void simple_linear_propagation(set <vector <uint>> &linear_constraints,
 			useless = 1;
 		}
 		// else {
-		// 	useless = 0;
+		//  useless = 0;
 		// }
 		
 
@@ -1098,8 +1266,8 @@ void simple_linear_propagation(set <vector <uint>> &linear_constraints,
 		else if (change) {
 			changes.push_back(equation_vector);
 			// for (uint x: equation_vector) {
-			// 	if (x != dsu[x])
-			// 		clog << "!!!\n";
+			//  if (x != dsu[x])
+			//      clog << "!!!\n";
 			// }
 			it = linear_constraints.erase(it);
 			continue;
@@ -1191,6 +1359,143 @@ char analyze_relations(vector <vector <uint>> &relations,
 }
 
 
+void solve(char &a, vector <char> &vars_values, vector <char> &is_def)
+{
+	map <pair <uint, uint>, uint> gate_pairs;
+	vector <uint> dsu(2 * (vars_cnt + 1));
+	vector <vector <uint>> classes(2 * (vars_cnt + 1));
+	vector <char> useless_equations(and_equations_cnt, 0);
+	auto linear_constraints = pattern_linear_constraints;
+	auto learnts = pattern_learnts;
+
+	for (uint i = 0; i < dsu.size(); ++i) {
+		dsu[i] = i;
+		classes[i].push_back(i);
+	}
+
+	while (true) {
+		char cnt;
+		while (true) {
+			cnt = 0;
+			for (uint i = 0; i < and_equations_cnt; ++i) {
+				if (useless_equations[i])
+					continue;
+
+				char useless;
+				auto e = equations[i];
+				cnt |= propagation(e, vars_values, is_def,
+					dsu, classes, gate_pairs, learnts, useless);
+				if (useless) {
+					useless_equations[i] = 1;
+					// TODO: STORE equations COPY IN list<and_equation> AND ERASE e FROM IT HERE
+				}
+			}
+			if (!cnt)
+				break;
+		}
+
+		vector <vector <uint>> relations;
+		simple_linear_propagation(linear_constraints, relations, vars_values, is_def, dsu);
+		cnt |= analyze_relations(relations, vars_values, is_def, dsu, classes);
+
+		cnt |= analyze_learnts(learnts, vars_values, is_def, dsu, classes);
+
+		if (!cnt) {
+			relations.clear();
+			linear_propagation(linear_constraints, relations);
+			cnt |= analyze_relations(relations, vars_values, is_def, dsu, classes);
+		}
+
+		if (!cnt)
+			break;
+	}
+
+	a = 1;
+	for (auto x: input_vars) {
+		if (!is_def[dsu[x]]) {
+			a = 0;
+			break;
+		}
+	}
+
+	// unsolved = {0, 0};
+	// for (int x: guessed_vars) {
+	//  if (!is_def[dsu[x]])
+	//      ++unsolved.first;
+	// }
+	// for (int x = 1; x <= vars_cnt; ++x) {
+	//  if (dsu[2 * x] == 2 * x && !is_def[2 * x])
+	//      ++unsolved.second;
+	// }
+	// unsolved.second -= linear_system.size();
+}
+
+
+void find_output(char &a, vector <char> &vars_values, vector <char> &is_def)
+{
+	map <pair <uint, uint>, uint> gate_pairs;
+	vector <uint> dsu(2 * (vars_cnt + 1));
+	vector <vector <uint>> classes(2 * (vars_cnt + 1));
+	vector <char> useless_equations(and_equations_cnt, 0);
+	auto linear_constraints = pattern_linear_constraints;
+	auto learnts = pattern_learnts;
+
+	for (uint i = 0; i < dsu.size(); ++i) {
+		dsu[i] = i;
+		classes[i].push_back(i);
+	}
+
+	while (true) {
+		char cnt;
+		while (true) {
+			cnt = 0;
+			for (uint i = 0; i < and_equations_cnt; ++i) {
+				if (useless_equations[i])
+					continue;
+
+				char useless;
+				auto e = equations[i];
+				cnt |= propagation(e, vars_values, is_def,
+					dsu, classes, gate_pairs, learnts, useless);
+				if (useless) {
+					useless_equations[i] = 1;
+				}
+			}
+			if (!cnt)
+				break;
+		}
+
+		vector <vector <uint>> relations;
+		simple_linear_propagation(linear_constraints, relations, vars_values, is_def, dsu);
+		cnt |= analyze_relations(relations, vars_values, is_def, dsu, classes);
+
+		cnt |= analyze_learnts(learnts, vars_values, is_def, dsu, classes);
+
+		if (!cnt) {
+			relations.clear();
+			linear_propagation(linear_constraints, relations);
+			cnt |= analyze_relations(relations, vars_values, is_def, dsu, classes);
+		}
+
+		if (!cnt)
+			break;
+	}
+
+	// a = 1;
+	// for (auto x: input_vars) {
+	//  if (!is_def[dsu[x]]) {
+	//      a = 0;
+	//      break;
+	//  }
+	// }
+
+	for (uint j = 0; j < guessed_vars_cnt; ++j)
+		vars_values[guessed_vars[j]] = vars_values[dsu[guessed_vars[j]]];
+	for (uint j = 0; j < output_vars_cnt; ++j)
+		vars_values[output_vars[j]] = vars_values[dsu[output_vars[j]]];
+}
+
+/*
 void simplify_aig(vector <char> &vars_values, vector <char> &is_def,
 		vector <uint> &dsu, vector <vector <uint>> &classes,
 		vector <char> &useless_equations,
@@ -1236,8 +1541,8 @@ void simplify_aig(vector <char> &vars_values, vector <char> &is_def,
 			break;
 	}
 }
-
-
+*/
+/*
 void build_new_aig(vector <char> &vars_values, vector <char> &is_def,
 		vector <uint> &dsu, vector <vector <uint>> &classes,
 		vector <and_equation> &new_equations, const vector <char> &useless_equations,
@@ -1327,7 +1632,7 @@ void build_new_aig(vector <char> &vars_values, vector <char> &is_def,
 	}
 
 	// формирование vars_map
-	uint var = 1;	
+	uint var = 1;   
 	for (uint i = 2; i <= 2 * vars_cnt; i += 2) {
 		if (!useless_variables[i]) {
 			vars_map[i] = 2 * var;
@@ -1339,21 +1644,15 @@ void build_new_aig(vector <char> &vars_values, vector <char> &is_def,
 	// формирование new_key_vars
 	for (uint i = 0; i < key_vars_cnt; ++i) {
 		uint key_var = dsu[key_vars[i]];
-		if (!useless_variables[key_var]) {
-			if (is_def[key_var])
-				clog << "warning: var " << key_var << " " << vars_map[key_var] << " is defined but not useless" << endl;
+		if (!useless_variables[key_var])
 			new_key_vars.push_back(vars_map[key_var]);
-		}
 	}
 
 	// формирование new_output_vars
 	for (uint i = 0; i < output_vars_cnt; ++i) {
 		uint out_var = dsu[output_vars[i]];
-		if (!useless_variables[out_var]) {
-			if (is_def[out_var])
-				clog << "warning: var " << out_var << " " << vars_map[out_var] << " is defined but not useless" << endl;
+		if (!useless_variables[out_var])
 			new_output_vars.push_back(vars_map[out_var]);
-		}
 	}
 
 	// формирование new_equations
@@ -1367,8 +1666,8 @@ void build_new_aig(vector <char> &vars_values, vector <char> &is_def,
 		new_equations.push_back({x, y, z});
 	}
 }
-
-
+*/
+/*
 void print_aig(const string &out_filename, vector <and_equation> &new_equations,
 		vector <uint> &new_key_vars, vector <uint> &new_output_vars, vector <uint> &new_vars)
 {
@@ -1393,17 +1692,13 @@ void print_aig(const string &out_filename, vector <and_equation> &new_equations,
 
 	fout.close();
 }
-
-
+*/
+/*
 void aig_to_aig(const string &substitution_filename, const string &out_filename,
-		const string &linear_constraints_filename, const string &learnts_filename,
-		const string &core_vars_filename)
+		const string &linear_constraints_filename, const string &learnts_filename)
 {
-	clog << "simplifying aig ..." << endl;
+	clog << "simplifying aig" << endl;
 
-// 	int counter = 0;
-//	while (true) {
-// cout << counter << endl;
 	vector <char> vars_values(2 * (vars_cnt + 1), 0),
 		is_def(2 * (vars_cnt + 1), 0);
 	vector <uint> dsu(2 * (vars_cnt + 1));
@@ -1418,24 +1713,9 @@ void aig_to_aig(const string &substitution_filename, const string &out_filename,
 	}
 
 	read_substitution(substitution_filename, vars_values, is_def, dsu);
-	vector <uint> core_vars;
-	read_core_vars(core_vars_filename, core_vars);
 
-	vars_random_assignment(core_vars, vars_values, is_def, dsu);
-// cout << counter << endl;
 	simplify_aig(vars_values, is_def, dsu, classes, useless_equations,
 		linear_constraints, learnts);
-
-	bool ok = 1;
-	for (auto x: output_vars)
-		if (!is_def[dsu[x]])
-			ok = 0;
-	if (!ok)
-		cout << "error" << endl;
-	else
-		cout << "ok" << endl;
-// 		++counter;
-//	}
 
 	vector <and_equation> new_equations;
 	vector <uint> new_key_vars, new_output_vars, vars_map;
@@ -1445,14 +1725,392 @@ void aig_to_aig(const string &substitution_filename, const string &out_filename,
 		new_key_vars, new_output_vars,
 		linear_constraints, learnts, vars_map);
 
-	print_aig(out_filename, new_equations, new_key_vars, new_output_vars, vars_map);
-	print_new_linear_constraints(linear_constraints,
-		linear_constraints_filename + "_new", vars_map);
-	print_new_learnts(learnts, learnts_filename + "_new", vars_map);
-	print_vars_map("vars_map", vars_map);
-	print_new_vars(core_vars, vars_map, "new_core_vars");
+
+	// print_aig(out_filename, new_equations, new_key_vars, new_output_vars, vars_map);
+	// print_new_linear_constraints(linear_constraints, linear_constraints_filename + "_new", vars_map);
+	// print_new_learnts(learnts, learnts_filename + "_new", vars_map);
 
 	clog << "ok" << endl;
+}
+*/
+
+void save_input_interp(int i, vector <char> &vars_values)
+{
+	for (uint j = 0; j < core_vars_cnt; ++j)
+		core_interp[i][j] = vars_values[core_vars[j]];
+	for (uint j = 0; j < iv_vars_cnt; ++j)
+		iv_interp[i][j] = vars_values[iv_vars[j]];
+}
+
+
+void save_output_interp(int i, vector <char> &vars_values)
+{
+	for (uint j = 0; j < guessed_vars_cnt; ++j)
+		guessed_interp[i][j] = vars_values[guessed_vars[j]];
+	for (uint j = 0; j < output_vars_cnt; ++j)
+		output_interp[i][j] = vars_values[output_vars[j]];
+}
+
+
+void gen_random_sample()
+{
+	clog << "gen random sample ... ";
+
+	vector <vector <char>> vars_values(cores, vector <char> (2 * (vars_cnt + 1)));
+	vector <vector <char>> is_def(cores, vector <char> (2 * (vars_cnt + 1)));
+
+	#pragma omp parallel for schedule(dynamic)
+	for (int i = 0; i < N; ++i) {
+		int j = omp_get_thread_num();
+		fill(all(is_def[j]), 0);
+		vars_random_assignment(core_vars, vars_values[j], is_def[j]);
+		vars_random_assignment(iv_vars,   vars_values[j], is_def[j]);
+		save_input_interp(i, vars_values[j]);
+		char a;
+		find_output(a, vars_values[j], is_def[j]);
+		save_output_interp(i, vars_values[j]);
+	}
+
+	clog << "ok" << endl;
+}
+
+
+void clear_vars_values(int i, const vector <char> &vars_set,
+		vector <char> &vars_values, vector <char> &is_def)
+{
+	fill(all(is_def), 0);
+
+	for (uint j = 0; j < iv_vars_cnt; ++j)
+		define_variable_value(iv_vars[j], iv_interp[i][j], vars_values, is_def);
+
+	for (uint j = 0; j < guessed_vars_cnt; ++j) {
+		if (vars_set[j])
+			define_variable_value(guessed_vars[j], guessed_interp[i][j], vars_values, is_def);
+	}
+
+	for (uint j = 0; j < output_vars_cnt; ++j)
+		define_variable_value(output_vars[j], output_interp[i][j], vars_values, is_def);
+}
+
+
+double complexity(const vector <char> &vars_set)
+{
+	auto it = complexity_set.find(vars_set);
+	if (it != complexity_set.end())
+		return it -> second;
+
+	int cnt = 0;
+	vector <char> answer(cores);
+	vector <vector <char>> vars_values(cores, vector <char> (2 * (vars_cnt + 1)));
+	vector <vector <char>> is_def(cores, vector <char> (2 * (vars_cnt + 1)));
+
+	#pragma omp parallel for shared(cnt) schedule(dynamic)
+	for (int i = 0; i < N; ++i) {
+		int j = omp_get_thread_num();
+		clear_vars_values(i, vars_set, vars_values[j], is_def[j]);
+		solve(answer[j], vars_values[j], is_def[j]);
+		if (answer[j]) {
+			#pragma omp atomic
+			++cnt;
+		}
+	}
+
+	double prob = (double) cnt / N;
+	double res;
+	if (prob == 0)
+		res = DBL_MAX;
+	else
+		res = 3.0 * pow(2.0, (double) bin_set_size(vars_set)) / prob;
+
+	probability_set[vars_set] = prob;
+	complexity_set[vars_set] = res;
+	++points_cnt;
+
+	return res;
+}
+
+
+/// ВЫБОР ТОЧКИ ИЗ tabu_list_2
+void choose_from_tabu_list_2(vector <char> &vars_set, double &cmplx)
+{
+	auto res = tabu_list_2.begin();
+	cmplx = res -> first;
+	vars_set = res -> second;
+}
+
+
+/// ВЫБОР ТОЧКИ ИЗ tabu_list_2_probability
+void choose_from_tabu_list_2_probability(vector <char> &vars_set, double &prob)
+{
+	auto res = tabu_list_2_probability.begin();
+	prob = res -> first;
+	vars_set = res -> second;
+}
+
+
+///  ПОИСК ОПТИМАЛЬНОГО ЛИНЕАРИЗАЦИОННОГО МНОЖЕСТВА (GREED)
+void tabu_search_greed(vector <char> &start_point, ofstream &fout)
+{
+	int start_number = 0;
+	int start_time = time(0);
+
+	vector <char> current_set(start_point);
+	double current_complexity = complexity(current_set);
+
+	while (true) {
+		fout << "current point:\n";
+		fout << "complexity: " << current_complexity << "\n";
+		fout << "probability: " << probability_set[current_set] << "\n";
+		fout << setw(4) << bin_set_size(current_set) << ":";
+		for (uint i = 0; i < guessed_vars_cnt; ++i) {
+			if (current_set[i])
+				fout << setw(4) << input_vars[i];
+		}
+		fout << "\npoints have been viewed: " << points_cnt << " (" << time(0) - start_time << " sec)\n\n";
+		fout.flush();
+
+		bool to_next_point = false;
+
+		/// ИЗМЕНЕНИЕ ОДНОЙ ПЕРЕМЕННОЙ
+		for (uint u = start_number; u < guessed_vars_cnt; ++u) {
+			current_set[u] = current_set[u] ^ true;
+
+			if (tabu_list_1.find(current_set) != tabu_list_1.end()) {
+				current_set[u] = current_set[u] ^ true;
+				continue;
+			}
+
+			double cmplx = complexity(current_set);
+			tabu_list_2.insert({cmplx, current_set});
+			start_number_set[current_set] = 0;
+
+			/// ЕСЛИ УЛУЧШИЛИ ОЦЕНКУ,
+			/// ПЕРЕХОДИМ В НАЙДЕННУЮ ТОЧКУ
+			if (cmplx < current_complexity) {
+				if (u + 1 == guessed_vars_cnt) {
+					current_set[u] = current_set[u] ^ true;
+
+					tabu_list_1.insert(current_set);
+
+					auto it = tabu_list_2.find({
+						current_complexity,
+						current_set
+					});
+					if (it != tabu_list_2.end()) {
+						tabu_list_2.erase(it);
+						start_number_set.erase(current_set);
+					}
+
+					current_set[u] = current_set[u] ^ true;
+				}
+				else {
+					current_set[u] = current_set[u] ^ true;
+
+					tabu_list_2.insert({
+						current_complexity,
+						current_set
+					});
+					start_number_set[current_set] = u + 1;
+
+					current_set[u] = current_set[u] ^ true;
+				}
+
+				start_number = 0;
+				current_complexity = cmplx;
+				to_next_point = true;
+				break;
+			}
+
+			current_set[u] = current_set[u] ^ true;
+		}
+
+		/// ПЕРЕХОД, ЕСЛИ БЫЛА НАЙДЕНА ТОЧКА ЛУЧШЕ ПРЕЖНЕЙ
+		if (to_next_point)
+			continue;
+
+		/// ЕСЛИ ВСЕ СОСЕДИ ПРОСМОТРЕННЫ, НАДО
+		/// ДОБАВИТЬ ТОЧКУ В tabu_list_1 И
+		/// УДАЛИТЬ ИЗ tabu_list_2
+		tabu_list_2.erase({
+			current_complexity,
+			current_set
+		});
+		start_number_set.erase(current_set);
+		tabu_list_1.insert(current_set);
+
+		if (tabu_list_2.empty()) {
+			fout << "all points have been viewed\n";
+			return;
+		}
+
+		/// ВЫБРАТЬ ТОЧКУ ИЗ 2-ГО СПИСКА
+		choose_from_tabu_list_2(current_set, current_complexity);
+		start_number = start_number_set[current_set];
+	}
+}
+
+
+///  ПОИСК ОПТИМАЛЬНОГО ЛИНЕАРИЗАЦИОННОГО МНОЖЕСТВА (OPTIMAL)
+void tabu_search_optimal(vector <char> &start_point, ofstream &fout)
+{
+	vector <char> current_set(start_point);
+	double current_complexity;
+	int start_time = time(0);
+
+	vector <char> best_set;
+	double best_complexity;
+
+	while (true) {
+		current_complexity = complexity(current_set);
+
+		fout << "current point:\n";
+		fout << "complexity: " << current_complexity << "\n";
+		fout << "probability: " << probability_set[current_set] << "\n";
+		fout << setw(4) << bin_set_size(current_set) << ":";
+		for (uint i = 0; i < guessed_vars_cnt; ++i) {
+			if (current_set[i]) {
+				fout << setw(4) << input_vars[i];
+			}
+		}
+		fout << "\npoints have been viewed: " << points_cnt << " (" << time(0) - start_time << " sec)\n\n";
+		fout.flush();
+
+		best_complexity = DBL_MAX;
+		/// ИЗМЕНЕНИЕ ОДНОЙ ПЕРЕМЕННОЙ
+		for (uint u = 0; u < guessed_vars_cnt; ++u) {
+			current_set[u] = current_set[u] ^ true;
+
+			if (tabu_list_1.find(current_set) != tabu_list_1.end()) {
+				current_set[u] = current_set[u] ^ true;
+				continue;
+			}
+
+			double cmplx = complexity(current_set);
+			tabu_list_2.insert({cmplx, current_set});
+			start_number_set[current_set] = 0;
+
+			/// ЕСЛИ УЛУЧШИЛИ ОЦЕНКУ,
+			/// МЕНЯЕМ best_set И best_complexity
+			if (cmplx < best_complexity) {
+				best_set = current_set;
+				best_complexity = cmplx;
+			}
+
+			current_set[u] = current_set[u] ^ true;
+		}
+
+		/// ДОБАВИТЬ ТОЧКУ В tabu_list_1 И
+		/// УДАЛИТЬ ИЗ tabu_list_2
+		tabu_list_1.insert(current_set);
+		tabu_list_2.erase({
+			current_complexity,
+			current_set
+		});
+
+		/// ПЕРЕХОД, ЕСЛИ БЫЛА НАЙДЕНА ТОЧКА ЛУЧШЕ ПРЕЖНЕЙ
+		if (best_complexity < current_complexity) {
+			current_set = best_set;
+			continue;
+		}
+
+		if (tabu_list_2.empty()) {
+			fout << "all points have been viewed\n";
+			return;
+		}
+
+		/// ВЫБРАТЬ ТОЧКУ ИЗ 2-ГО СПИСКА
+		choose_from_tabu_list_2(current_set, current_complexity);
+	}
+}
+
+
+///  ПОИСК ОПТИМАЛЬНОГО ЛИНЕАРИЗАЦИОННОГО МНОЖЕСТВА (PROBABILITY)
+void tabu_search_probability(vector <char> &start_point, ofstream &fout)
+{
+	vector <char> current_set(start_point);
+	double current_probability;
+	double current_complexity;
+	int start_time = time(0);
+
+	vector <char> best_set;
+	double best_probability;
+
+	while (true) {
+		current_complexity = complexity(current_set);
+		current_probability = probability_set[current_set];
+
+		fout << "current point:\n";
+		fout << "complexity: " << current_complexity << "\n";
+		fout << "probability: " << current_probability << "\n";
+		fout << setw(4) << bin_set_size(current_set) << ":";
+		for (uint i = 0; i < guessed_vars_cnt; ++i) {
+			if (current_set[i]) {
+				fout << setw(4) << input_vars[i];
+			}
+		}
+		fout << "\npoints have been viewed: " << points_cnt << " (" << time(0) - start_time << " sec)\n\n";
+		fout.flush();
+
+		best_probability = 0;
+		/// ИЗМЕНЕНИЕ ОДНОЙ ПЕРЕМЕННОЙ
+		for (uint u = 0; u < guessed_vars_cnt; ++u) {
+			current_set[u] = current_set[u] ^ true;
+
+			if (tabu_list_1.find(current_set) != tabu_list_1.end()) {
+				current_set[u] = current_set[u] ^ true;
+				continue;
+			}
+
+			complexity(current_set);
+			double prob = probability_set[current_set];
+			tabu_list_2_probability.insert({prob, current_set});
+			start_number_set[current_set] = 0;
+
+			/// ЕСЛИ УЛУЧШИЛИ ОЦЕНКУ,
+			/// МЕНЯЕМ best_set И best_probability
+			if (prob > best_probability) {
+				best_set = current_set;
+				best_probability = prob;
+			}
+
+			current_set[u] = current_set[u] ^ true;
+		}
+
+		/// ДОБАВИТЬ ТОЧКУ В tabu_list_1 И
+		/// УДАЛИТЬ ИЗ tabu_list_2_probability
+		tabu_list_1.insert(current_set);
+		tabu_list_2_probability.erase({
+			current_probability,
+			current_set
+		});
+
+		/// ПЕРЕХОД, ЕСЛИ БЫЛА НАЙДЕНА ТОЧКА ЛУЧШЕ ПРЕЖНЕЙ
+		if (best_probability > current_probability) {
+			current_set = best_set;
+			continue;
+		}
+
+		if (tabu_list_2_probability.empty()) {
+			fout << "all points have been viewed\n";
+			return;
+		}
+
+		/// ВЫБРАТЬ ТОЧКУ ИЗ 2-ГО СПИСКА
+		choose_from_tabu_list_2_probability(current_set, current_probability);
+	}
+}
+
+
+void tabu_search(vector <char> &start_point, const string &filename, int mode)
+{
+	ofstream fout(filename.data());
+	fout << "search starts..." << endl;
+	if (mode == GREED)
+		tabu_search_greed(start_point, fout);
+	else if (mode == OPTIMAL)
+		tabu_search_optimal(start_point, fout);
+	else if (mode == PROB)
+		tabu_search_probability(start_point, fout);
 }
 
 
@@ -1465,10 +2123,14 @@ int main(int argc, char *argv[])
 	string in_filename, out_filename;
 	string substitution_filename, core_vars_filename;
 	string linear_constraints_filename, learnts_filename;
+	string start_point_filename;
+	int mode;
 	init(argc, argv, in_filename, out_filename,
 		substitution_filename, core_vars_filename,
-		linear_constraints_filename, learnts_filename);
+		linear_constraints_filename, learnts_filename,
+		start_point_filename, mode);
 
+	read_core_vars(core_vars_filename);
 	read_aig(in_filename);
 
 	find_linear_constraints(pattern_linear_constraints);
@@ -1477,8 +2139,12 @@ int main(int argc, char *argv[])
 
 	read_learnts(pattern_learnts, learnts_filename);
 
-	aig_to_aig(substitution_filename, out_filename,
-		linear_constraints_filename, learnts_filename,
-		core_vars_filename);
+	vector <char> start_point;
+	read_start_point_file(start_point_filename, start_point);
+
+	gen_random_sample();
+	// read_sample(sample_filename);
+
+	tabu_search(start_point, out_filename, mode);
 
 }
