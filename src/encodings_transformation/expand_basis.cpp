@@ -33,7 +33,6 @@ bool operator< (const AndEquation &a, const AndEquation &b)
 /// МНОЖЕСТВО ВСЕХ УРАВНЕНИЙ
 vector<AndEquation> equations;
 set<vector<int>> pattern_linear_constraints;
-// map <vector <int>, set <vector <char>>> pattern_learnts;
 
 
 /// МАССИВЫ НОМЕРОВ ВХОДНЫХ / ВЫХОДНЫХ ПЕРЕМЕННЫХ
@@ -118,66 +117,6 @@ void init(int argc, char *argv[],
 		lin_filename = "linear";
 		clog << "warning: void init(): " <<
 			"additional linear constraints filename has been set to default value \'linear\'\n";
-	}
-}
-
-
-/***********************
- * general subprograms *
- **********************/
-template <typename T>
-void order(vector<T> &v) {
-	sort(all(v));
-	v.resize(unique(all(v)) - v.begin());
-	v.shrink_to_fit();
-}
-
-
-void equations_xor(vector<int> e1, vector<int> e2,
-		vector<int> &res)
-{
-	char b = 0;
-	if (!e1.empty()) {
-		b ^= e1[0];
-		e1[0] &= -2;
-	}
-	if (!e2.empty()) {
-		b ^= e2[0];
-		e2[0] &= -2;
-	}
-	b &= 1;
-	set_symmetric_difference(all(e1), all(e2), back_inserter(res));
-	if (b) {
-		if (res.empty())
-			throw runtime_error("error: void equations_xor(): 0 == 1");
-		res[0] ^= 1;
-	}
-}
-
-
-void reduce_constraints(set<vector<int>> &linear_constraints)
-{
-	vector<vector<int>> new_lc;
-	for (auto e: linear_constraints) {
-		char b = 0;
-		for (auto &x: e) {
-			b ^= x & 1;
-			x &= -2;
-		}
-		sort(all(e));
-		e[0] ^= b;
-		new_lc.push_back(e);
-	}
-	linear_constraints.clear();
-	linear_constraints.insert(all(new_lc));
-}
-
-
-void resize_all(vector<vector<char> > &vec, int cnt)
-{
-	// #pragma omp parallel for
-	for (int i = 0; i < (int) vec.size(); ++i) {
-		vec[i].resize(cnt);
 	}
 }
 
@@ -392,7 +331,7 @@ void find_xor_gates(set<vector<int>> &linear_constraints)
 	// std::vector<int> index_new(vars_cnt + 1, -1);
 	
 	// for (int i = 0; i < and_equations_cnt; ++i)
-		// index[equations[i].x / 2] = i;
+		// index_new[equations[i].x / 2] = i;
 }
 
 
