@@ -2,12 +2,7 @@
 
 #define all(x) (x).begin(), (x).end()
 
-typedef long long ll;
-typedef unsigned int uint;
-
 using namespace std;
-
-// mutex log_mtx;
 
 mt19937_64 gen(time(0));
 
@@ -15,19 +10,19 @@ mt19937_64 gen(time(0));
 /// x ^ y & z = 0 ( x = y & z )
 /// ПОД x, y, z ПОНИМАЮТСЯ ПЕРЕМЕННЫЕ
 /// С НОМЕРАМИ x, y, z СООТВЕТСТВЕННО
-class and_equation {
+class AndEquation {
 public:
-	uint x;
-	uint y;
-	uint z;
+	int x;
+	int y;
+	int z;
 };
 
-bool operator== (const and_equation &a, const and_equation &b)
+bool operator== (const AndEquation &a, const AndEquation &b)
 {
 	return a.y == b.y && a.z == b.z;
 }
 
-bool operator< (const and_equation &a, const and_equation &b)
+bool operator< (const AndEquation &a, const AndEquation &b)
 {
 	return (((a.y & 1) << 1) ^ (a.z & 1)) < (((b.y & 1) << 1) ^ (b.z & 1));
 }
@@ -39,32 +34,32 @@ char random_bool()
 
 
 /// МНОЖЕСТВО ВСЕХ УРАВНЕНИЙ
-vector <and_equation> equations;
-set <vector <uint>> pattern_linear_constraints;
-map <vector <uint>, set <vector <char>>> pattern_learnts;
+vector<AndEquation> equations;
+set<vector<int>> pattern_linear_constraints;
+map<vector<int>, set<vector<char>>> pattern_learnts;
 
 
 /// МАССИВЫ НОМЕРОВ ВХОДНЫХ / ВЫХОДНЫХ ПЕРЕМЕННЫХ
-vector <uint> key_vars;
-vector <uint> iv_vars;
-vector <uint> input_vars;
-vector <uint> output_vars;
+vector<int> key_vars; // TODO: replace with input_vars
+vector<int> iv_vars;
+vector<int> input_vars;
+vector<int> output_vars;
 
 
 /// КОЛИЧЕСТВО УРАВНЕНИЙ
 /// СЧИТЫВАЕТСЯ ИЗ ЗАГОЛОВКА ФАЙЛА
-uint and_equations_cnt = 0;
+int and_equations_cnt = 0;
 
 
 /// КОЛИЧЕСТВО ВСЕХ ПЕРЕМЕННЫХ И
 /// ВХОДНЫХ / ВЫХОДНЫХ ПЕРЕМЕННЫХ
 /// СЧИТЫВАЕТСЯ ИЗ ЗАГОЛОВКА ФАЙЛА
-uint vars_cnt = 0;
-uint input_vars_cnt = 0;
-uint key_vars_cnt = 0;
-uint iv_vars_cnt = 0;
-uint output_vars_cnt = 0;
-uint latches_cnt = 0;
+int vars_cnt = 0;
+int input_vars_cnt = 0;
+int key_vars_cnt = 0;
+int iv_vars_cnt = 0;
+int output_vars_cnt = 0;
+int latches_cnt = 0;
 
 
 /// ЧТЕНИЕ ПАРАМЕТРОВ ИЗ ТЕРМИНАЛА
@@ -80,9 +75,9 @@ void init(int argc, char *argv[],
 	lin_filename	 = "";
 	learnts_filename = "";
 
-	for (uint i = 1; i < (uint) argc; ++i) {
+	for (int i = 1; i < (int) argc; ++i) {
 		string param;
-		uint j = 0;
+		int j = 0;
 
 		for (; argv[i][j] != '=' && argv[i][j] != 0; ++j)
 			param.insert(param.end(), argv[i][j]);
@@ -112,9 +107,9 @@ void init(int argc, char *argv[],
 		}
 		else if (param == "--key-size" || param == "-k") {
 			if (argv[i][j] == 0)
-				key_vars_cnt = (uint) atoi(argv[++i]);
+				key_vars_cnt = (int) atoi(argv[++i]);
 			else
-				key_vars_cnt = (uint) atoi(argv[i] + j + 1);
+				key_vars_cnt = (int) atoi(argv[i] + j + 1);
 		}
 		else if (param == "--substitution" || param == "-s") {
 			if (argv[i][j] == 0)
@@ -187,14 +182,14 @@ void init(int argc, char *argv[],
  * general subprograms *
  **********************/
 template <typename T>
-void order(vector <T> &v) {
+void order(vector<T> &v) {
 	sort(all(v));
 	v.resize(unique(all(v)) - v.begin());
 	v.shrink_to_fit();
 }
 
 /*
-void log_linear_constraints(const set <vector <uint>> &linear_constraints)
+void log_linear_constraints(const set<vector<int>> &linear_constraints)
 {
 	clog << "linear constraints:\n";
 	for (auto &v: linear_constraints) {
@@ -205,10 +200,10 @@ void log_linear_constraints(const set <vector <uint>> &linear_constraints)
 }
 */
 /*
-void log_learnts(const map <vector <uint>, set <vector <char>>> &learnts) {
+void log_learnts(const map<vector<int>, set<vector<char>>> &learnts) {
 	for (auto &p: learnts) {
 		for (auto &v: p.second) {
-			for (uint i = 0; i < p.first.size(); ++i)
+			for (int i = 0; i < p.first.size(); ++i)
 				clog << (v[i] ? "-" : "") << p.first[i] / 2 << " ";
 			clog << "0\n";
 		}
@@ -216,8 +211,8 @@ void log_learnts(const map <vector <uint>, set <vector <char>>> &learnts) {
 }
 */
 
-void print_new_linear_constraints(const set <vector <uint>> &linear_constraints,
-		const string &filename, const vector <uint> &vars_map)
+void print_new_linear_constraints(const set<vector<int>> &linear_constraints,
+		const string &filename, const vector<int> &vars_map)
 {
 	ofstream fout(filename.data());
 	for (auto &v: linear_constraints) {
@@ -229,14 +224,14 @@ void print_new_linear_constraints(const set <vector <uint>> &linear_constraints,
 }
 
 /// PRINTS new_learnts IN DIMACS FORMAT
-void print_new_learnts(const map <vector <uint>, set <vector <char>>> &learnts,
-		const string &filename, const vector <uint> &vars_map)
+void print_new_learnts(const map<vector<int>, set<vector<char>>> &learnts,
+		const string &filename, const vector<int> &vars_map)
 {
 	ofstream fout(filename.data());
 	for (auto &p: learnts) {
-		uint n = p.first.size();
+		int n = p.first.size();
 		for (auto &v: p.second) {
-			for (uint i = 0; i < n; ++i) {
+			for (int i = 0; i < n; ++i) {
 				int x = vars_map[p.first[i] ^ v[i]];
 				fout << (x & 1 ? - x / 2 : x / 2) << " ";
 			}
@@ -247,7 +242,7 @@ void print_new_learnts(const map <vector <uint>, set <vector <char>>> &learnts,
 }
 
 
-void print_vars_map(const string &filename, const vector <uint> &vars_map)
+void print_vars_map(const string &filename, const vector<int> &vars_map)
 {
 	ofstream fout(filename.data());
 	for (auto x: vars_map)
@@ -255,7 +250,7 @@ void print_vars_map(const string &filename, const vector <uint> &vars_map)
 }
 
 
-void print_new_vars(const vector <uint> &v, const vector <uint> &vars_map,
+void print_new_vars(const vector<int> &v, const vector<int> &vars_map,
 		const string &filename)
 {
 	ofstream fout(filename.data());
@@ -265,13 +260,13 @@ void print_new_vars(const vector <uint> &v, const vector <uint> &vars_map,
 }
 
 
-char add_learnts(map <vector <uint>, set <vector <char>>> &learnts,
-		vector <uint> &key_value)
+char add_learnts(map<vector<int>, set<vector<char>>> &learnts,
+		vector<int> &key_value)
 {
 	sort(all(key_value));
-	vector <uint> key(key_value.size());
-	vector <char> negations(key_value.size());
-	for (uint i = 0; i < key_value.size(); ++i) {
+	vector<int> key(key_value.size());
+	vector<char> negations(key_value.size());
+	for (int i = 0; i < key_value.size(); ++i) {
 		key[i] = key_value[i] & -2;
 		negations[i] = key_value[i] & 1;
 	}
@@ -286,8 +281,8 @@ char add_learnts(map <vector <uint>, set <vector <char>>> &learnts,
 }
 
 
-void equations_xor(vector <uint> e1, vector <uint> e2,
-		vector <uint> &res)
+void equations_xor(vector<int> e1, vector<int> e2,
+		vector<int> &res)
 {
 	char b = 0;
 	if (!e1.empty()) {
@@ -308,22 +303,21 @@ void equations_xor(vector <uint> e1, vector <uint> e2,
 }
 
 /*
-void log_vars_values(vector <char> &vars_values, vector <char> &is_def,
-		vector <uint> &dsu)
+void log_vars_values(vector<char> &vars_values, vector<char> &is_def,
+		vector<int> &dsu)
 {
 	clog << "variables values\n" <<
 		"var is_def value dsu\n";
-	for (uint x = 1; x <= vars_cnt; ++x) {
-		uint y = dsu[2 * x];
+	for (int x = 1; x <= vars_cnt; ++x) {
+		int y = dsu[2 * x];
 		clog << 2 * x << " " << (int)is_def[y] << " " <<
 			(int)vars_values[y] << " " << y << "\n";
 	}
 }
 */
 
-void reduce_constraints(set <vector <uint>> &linear_constraints)
-{
-	vector <vector <uint>> new_lc;
+void reduce_constraints(set<vector<int>> &linear_constraints) {
+	vector<vector<int>> new_lc;
 	for (auto e: linear_constraints) {
 		char b = 0;
 		for (auto &x: e) {
@@ -380,11 +374,11 @@ void read_input(ifstream &fin)
 	iv_vars.clear();
 	iv_vars.resize(iv_vars_cnt);
 
-	for (uint i = 0; i < key_vars_cnt; ++i) {
+	for (int i = 0; i < key_vars_cnt; ++i) {
 		fin >> key_vars[i];
 		input_vars[i] = key_vars[i];
 	}
-	for (uint i = 0; i < iv_vars_cnt; ++i) {
+	for (int i = 0; i < iv_vars_cnt; ++i) {
 		fin >> iv_vars[i];
 		input_vars[key_vars_cnt + i] = iv_vars[i];
 	}
@@ -398,7 +392,7 @@ void read_output(ifstream &fin)
 
 	output_vars.resize(output_vars_cnt);
 
-	for (uint i = 0; i < output_vars_cnt; ++i)
+	for (int i = 0; i < output_vars_cnt; ++i)
 		fin >> output_vars[i];
 
 	clog << "ok" << endl;
@@ -409,8 +403,8 @@ void read_equations(ifstream &fin)
 	clog << " reading equations ... ";
 
 	equations.resize(and_equations_cnt);
-	for (uint i = 0; i < and_equations_cnt; ++i) {
-		uint x, y, z;
+	for (int i = 0; i < and_equations_cnt; ++i) {
+		int x, y, z;
 		fin >> x >> y >> z;
 		equations[i] = {x, min(y, z), max(y, z)};
 	}
@@ -433,7 +427,7 @@ void read_aig(const string &in_filename)
 }
 
 
-void read_linear_constraints(set <vector <uint>> &linear_constraints,
+void read_linear_constraints(set<vector<int>> &linear_constraints,
 		const string &filename)
 {
 	clog << "reading additional linear constraints from \'" << filename << "\' ... ";
@@ -444,8 +438,8 @@ void read_linear_constraints(set <vector <uint>> &linear_constraints,
 	while (getline(fin, line)) {
 		ss.clear();
 		ss << line;
-		uint x;
-		vector <uint> equation;
+		int x;
+		vector<int> equation;
 		while (ss >> x)
 			equation.push_back(x);
 		linear_constraints.insert(equation);
@@ -455,22 +449,21 @@ void read_linear_constraints(set <vector <uint>> &linear_constraints,
 	clog << "ok" << endl;
 }
 
-
 /// READ LEARNTS FROM THE FILE.
 /// DATA ARE PRESENTED IN DIMACS FORMAT (WITHOUT HEADER).
-void read_learnts(map <vector <uint>, set <vector <char>>> &learnts,
+void read_learnts(map<vector<int>, set<vector<char>>> &learnts,
 		const string &filename)
 {
 	clog << "reading additional learnts from \'" << filename << "\' ... ";
 	ifstream fin(filename.data());
 	int x;
-	vector <uint> key_value;
+	vector<int> key_value;
 	while (fin >> x) {
 		if (x == 0) {
-			vector <uint> key(key_value.size());
-			vector <char> negations(key_value.size());
+			vector<int> key(key_value.size());
+			vector<char> negations(key_value.size());
 			sort(all(key_value));
-			for (uint i = 0; i < key_value.size(); ++i) {
+			for (int i = 0; i < key_value.size(); ++i) {
 				key[i] = key_value[i] & -2;
 				negations[i] = key_value[i] & 1;
 			}
@@ -491,12 +484,12 @@ void read_learnts(map <vector <uint>, set <vector <char>>> &learnts,
 }
 
 
-void read_core_vars(const string &filename, vector <uint> &core_vars)
+void read_core_vars(const string &filename, vector<int> &core_vars)
 {
-	clog << " reading core variables from \'" << filename << "\' ... ";
+	clog << "reading core variables from \'" << filename << "\' ... ";
 	ifstream fin(filename.data());
 
-	uint x;
+	int x;
 	while (fin >> x)
 		core_vars.push_back(x);
 
@@ -508,9 +501,9 @@ void read_core_vars(const string &filename, vector <uint> &core_vars)
 /**************************
  * simplification methods *
  **************************/
-void define_variable_value(uint var, char val,
-		vector <char> &vars_values, vector <char> &is_def,
-		const vector <uint> &dsu)
+void define_variable_value(int var, char val,
+		vector<char> &vars_values, vector<char> &is_def,
+		const vector<int> &dsu)
 {
 	var = dsu[var];
 	if (is_def[var]) {
@@ -528,9 +521,9 @@ void define_variable_value(uint var, char val,
 }
 
 
-void join_sets(uint x, uint y,
-		vector <char> &vars_values, vector <char> &is_def,
-		vector <uint> &dsu, vector <vector <uint>> &classes)
+void join_sets(int x, int y,
+		vector<char> &vars_values, vector<char> &is_def,
+		vector<int> &dsu, vector<vector<int>> &classes)
 {
 	x = dsu[x];
 	y = dsu[y];
@@ -558,7 +551,7 @@ void join_sets(uint x, uint y,
 	if (classes[x].size() < classes[y].size())
 		swap(x, y);
 
-	for (uint z: classes[y]) {
+	for (int z: classes[y]) {
 		dsu[z] = x;
 		dsu[z ^ 1] = x ^ 1;
 		classes[x].push_back(z);
@@ -569,21 +562,21 @@ void join_sets(uint x, uint y,
 }
 
 
-void vars_random_assignment(const vector <uint> &vars,
-		vector <char> &vars_values, vector <char> &is_def, vector <uint> &dsu)
+void vars_random_assignment(const vector<int> &vars,
+		vector<char> &vars_values, vector<char> &is_def, vector<int> &dsu)
 {
-	for (uint var: vars)
+	for (int var: vars)
 		define_variable_value(var, random_bool(), vars_values, is_def, dsu);
 }
 
 
-void read_substitution(const string &filename, vector <char> &vars_values,
-		vector <char> &is_def, vector <uint> &dsu)
+void read_substitution(const string &filename, vector<char> &vars_values,
+		vector<char> &is_def, vector<int> &dsu)
 {
-	clog << " reading substitution from \'" << filename << "\' ... ";
+	clog << "reading substitution from \'" << filename << "\' ... ";
 	ifstream fin(filename.data());
 
-	uint x;
+	int x;
 	while (fin >> x)
 		define_variable_value(x, 0, vars_values, is_def, dsu);
 
@@ -592,10 +585,10 @@ void read_substitution(const string &filename, vector <char> &vars_values,
 }
 
 
-void find_linear_constraints(set <vector <uint>> &linear_constraints)
+void find_linear_constraints(set<vector<int>> &linear_constraints)
 {
 	clog << "finding additional linear constraints ... ";
-	map <pair <uint, uint>, vector <and_equation>> similar_gates;
+	map<pair <int, int>, vector<AndEquation>> similar_gates;
 	for (auto &e: equations)
 		similar_gates[{e.y & -2, e.z & -2}].push_back(e);
 
@@ -606,12 +599,12 @@ void find_linear_constraints(set <vector <uint>> &linear_constraints)
 			continue;
 
 		auto key = p.first;
-		uint a = key.first + (s[0].y & 1), b = key.second + (s[0].z & 1);
-		uint id0 = ((s[0].y & 1) << 1) ^ (s[0].z & 1);
-		vector <uint> vars;
+		int a = key.first + (s[0].y & 1), b = key.second + (s[0].z & 1);
+		int id0 = ((s[0].y & 1) << 1) ^ (s[0].z & 1);
+		vector<int> vars;
 
-		for (uint i = 1; i < s.size(); ++i) {
-			uint idi = ((s[i].y & 1) << 1) ^ (s[i].z & 1) ^ id0;
+		for (int i = 1; i < s.size(); ++i) {
+			int idi = ((s[i].y & 1) << 1) ^ (s[i].z & 1) ^ id0;
 			if (idi == 1) // x0 + xi = ab + a(b + 1) = ab + ab + a = a
 				vars = {s[0].x, s[i].x, a};
 			else if (idi == 2) // x0 + xi = ab + (a + 1)b = ab + b + ab = b
@@ -628,17 +621,17 @@ void find_linear_constraints(set <vector <uint>> &linear_constraints)
 /// ВЫВОД ИЗ КВАДРАТИЧНОГО УРАВНЕНИЯ.
 /// ВОЗВРАЩАЕТ 1, ЕСЛИ ХОТЬ ЧТО-ТО ВЫВЕЛОСЬ.
 /// ИНАЧЕ 0. ИСПОЛЬЗУЕТ КЛАССЫ ЭКВИВАЛЕНТНОСТИ.
-char propagation(const and_equation &e,
-		vector <char> &vars_values, vector <char> &is_def,
-		vector <uint> &dsu, vector <vector <uint>> &classes,
-		map <vector <uint>, set <vector <char>>> &learnts,
+char propagation(const AndEquation &e,
+		vector<char> &vars_values, vector<char> &is_def,
+		vector<int> &dsu, vector<vector<int>> &classes,
+		map<vector<int>, set<vector<char>>> &learnts,
 		char &useless)
 {
 	useless = 1;
 
-	uint x = dsu[e.x];
-	uint y = dsu[e.y];
-	uint z = dsu[e.z];
+	int x = dsu[e.x];
+	int y = dsu[e.y];
+	int z = dsu[e.z];
 
 	char val_x = vars_values[x];
 	char val_y = vars_values[y];
@@ -696,7 +689,7 @@ char propagation(const and_equation &e,
 			// useless = 1;
 			return 0;
 		}
-		vector <uint> key_value = {x ^ 1, z};
+		vector<int> key_value = {x ^ 1, z};
 		// useless = 1;
 		return add_learnts(learnts, key_value);
 	}
@@ -731,7 +724,7 @@ char propagation(const and_equation &e,
 			// useless = 1;
 			return 0;
 		}
-		vector <uint> key_value = {x ^ 1, y};
+		vector<int> key_value = {x ^ 1, y};
 		// useless = 1;
 		return add_learnts(learnts, key_value);
 	}
@@ -783,7 +776,7 @@ char propagation(const and_equation &e,
 			// useless = 1;
 			return 1;
 		}
-		vector <uint> key_value = {y ^ 1, z ^ 1};
+		vector<int> key_value = {y ^ 1, z ^ 1};
 		// useless = 1;
 		return add_learnts(learnts, key_value);
 	}
@@ -800,16 +793,16 @@ char propagation(const and_equation &e,
 /// ВЫВОД ИЗ КВАДРАТИЧНОГО УРАВНЕНИЯ.
 /// ВОЗВРАЩАЕТ 1, ЕСЛИ ХОТЬ ЧТО-ТО ВЫВЕЛОСЬ.
 /// ИНАЧЕ 0. ДОБАВЛЕНА ПРОВЕРКА ЭКВИВАЛЕНТНОСТИ ВХОДОВ.
-char propagation(const and_equation &e,
-		vector <char> &vars_values, vector <char> &is_def,
-		vector <uint> &dsu, vector <vector <uint>> &classes,
-		map <pair <uint, uint>, uint> &gate_pairs,
-		map <vector <uint>, set <vector <char>>> &learnts,
+char propagation(const AndEquation &e,
+		vector<char> &vars_values, vector<char> &is_def,
+		vector<int> &dsu, vector<vector<int>> &classes,
+		map<pair <int, int>, int> &gate_pairs,
+		map<vector<int>, set<vector<char>>> &learnts,
 		char &useless)
 {
-	uint x = dsu[e.x];
-	uint y = dsu[e.y];
-	uint z = dsu[e.z];
+	int x = dsu[e.x];
+	int y = dsu[e.y];
+	int z = dsu[e.z];
 
 	if (is_def[x] && is_def[y] && is_def[z]) {
 		useless = 1;
@@ -818,7 +811,7 @@ char propagation(const and_equation &e,
 
 	if (y > z)
 		swap(y, z);
-	pair <uint, uint> key = {y, z};
+	pair <int, int> key = {y, z};
 
 	auto it = gate_pairs.find(key);
 	char res = 0;
@@ -845,22 +838,22 @@ char propagation(const and_equation &e,
 }
 
 
-char learnts_propagation(vector <uint> &key, vector <vector <char>> &negations,
-		vector <char> &vars_values, vector <char> &is_def,
-		vector <uint> &dsu, vector <vector <uint>> &classes,
+char learnts_propagation(vector<int> &key, vector<vector<char>> &negations,
+		vector<char> &vars_values, vector<char> &is_def,
+		vector<int> &dsu, vector<vector<int>> &classes,
 		char &useless)
 {
 	useless = 1;
-	uint n = key.size();
-	vector <vector <uint>> disjuncts;
-	vector <uint> variables = key;
+	int n = key.size();
+	vector<vector<int>> disjuncts;
+	vector<int> variables = key;
 	for (auto &x: variables)
 		x = dsu[x];
 	for (auto &v: negations) {
-		vector <uint> disjunct;
+		vector<int> disjunct;
 		bool skip = 0; // applying UP rule flag
-		for (uint i = 0; i < key.size(); ++i) {
-			uint x = variables[i] ^ v[i];
+		for (int i = 0; i < key.size(); ++i) {
+			int x = variables[i] ^ v[i];
 			if (is_def[x]) {
 				if (vars_values[x] == 0)
 					continue;
@@ -889,7 +882,7 @@ char learnts_propagation(vector <uint> &key, vector <vector <char>> &negations,
 	}
 	else if (n == 1) {
 		for (auto &d: disjuncts) {
-			uint x = dsu[d[0]];
+			int x = dsu[d[0]];
 			define_variable_value(x, 1, vars_values, is_def, dsu);
 		}
 		// useless = 1;
@@ -898,7 +891,7 @@ char learnts_propagation(vector <uint> &key, vector <vector <char>> &negations,
 	else if (n == 2) {
 		if (disjuncts.size() == 1) {
 			auto d = disjuncts[0];
-			uint x = dsu[d[0]], y = dsu[d[1]];
+			int x = dsu[d[0]], y = dsu[d[1]];
 			if (x == y) {
 				define_variable_value(x, 1, vars_values, is_def, dsu);
 				// useless = 1;
@@ -915,7 +908,7 @@ char learnts_propagation(vector <uint> &key, vector <vector <char>> &negations,
 		}
 		else if (disjuncts.size() == 2) {
 			auto d0 = disjuncts[0], d1 = disjuncts[1];
-			uint x1 = dsu[d0[0]], y1 = dsu[d0[1]],
+			int x1 = dsu[d0[0]], y1 = dsu[d0[1]],
 				 x2 = dsu[d1[0]], y2 = dsu[d1[1]];
 			if (x1 == x2) {
 				define_variable_value(x1, 1, vars_values, is_def, dsu);
@@ -938,7 +931,7 @@ char learnts_propagation(vector <uint> &key, vector <vector <char>> &negations,
 			}
 		}
 		else if (disjuncts.size() == 3) {
-			uint x = 0, y = 0;
+			int x = 0, y = 0;
 			for (auto &d: disjuncts) {
 				x ^= dsu[d[0]];
 				y ^= dsu[d[1]];
@@ -963,19 +956,19 @@ char learnts_propagation(vector <uint> &key, vector <vector <char>> &negations,
 }
 
 
-char analyze_learnts(map <vector <uint>, set <vector <char>>> &learnts,
-		vector <char> &vars_values, vector <char> &is_def,
-		vector <uint> &dsu, vector <vector <uint>> &classes)
+char analyze_learnts(map<vector<int>, set<vector<char>>> &learnts,
+		vector<char> &vars_values, vector<char> &is_def,
+		vector<int> &dsu, vector<vector<int>> &classes)
 {
-	map <vector <uint>, set <vector <char>>> changes;
+	map<vector<int>, set<vector<char>>> changes;
 	char cnt = 0;
 	for (auto it = learnts.begin(); it != learnts.end(); ) {
 		auto key = it -> first;
-		vector <vector <char>> negations(all(it -> second));
+		vector<vector<char>> negations(all(it -> second));
 
 		bool change_vars = 0;
-		for (uint i = 0; i < key.size(); ++i) {
-			uint x = key[i];
+		for (int i = 0; i < key.size(); ++i) {
+			int x = key[i];
 			if (dsu[x] != x) {
 				change_vars = 1;
 				key[i] = dsu[x] & -2;
@@ -985,7 +978,6 @@ char analyze_learnts(map <vector <uint>, set <vector <char>>> &learnts,
 				}
 			}
 		}
-
 		if (change_vars) {
 			changes[key].insert(all(negations));
 			it = learnts.erase(it);
@@ -999,16 +991,16 @@ char analyze_learnts(map <vector <uint>, set <vector <char>>> &learnts,
 				remove_vars = 1;
 		}
 		if (remove_vars) {
-			vector <uint> new_key;
+			vector<int> new_key;
 			for (auto x: key) {
 				if (!is_def[x])
 					new_key.push_back(x);
 			}
-			vector <vector <char>> new_negations;
+			vector<vector<char>> new_negations;
 			for (auto &v: negations) {
-				vector <char> new_v;
+				vector<char> new_v;
 				bool useless = 0;
-				for (uint i = 0; i < key.size(); ++i) {
+				for (int i = 0; i < key.size(); ++i) {
 					if (!is_def[key[i]]) {
 						new_v.push_back(v[i]);
 						continue;
@@ -1045,16 +1037,16 @@ char analyze_learnts(map <vector <uint>, set <vector <char>>> &learnts,
 }
 
 
-void simple_linear_propagation(set <vector <uint>> &linear_constraints,
-		vector <vector <uint>> &relations,
-		vector <char> &vars_values, vector <char> &is_def,
-		vector <uint> &dsu)
+void simple_linear_propagation(set<vector<int>> &linear_constraints,
+		vector<vector<int>> &relations,
+		vector<char> &vars_values, vector<char> &is_def,
+		vector<int> &dsu)
 {
-	vector <vector <uint>> changes;
+	vector<vector<int>> changes;
 	for (auto it = linear_constraints.begin(); it != linear_constraints.end(); ) {
 		char useless = 0, value = 0, change = 1;
-		vector <uint> equation_vector;
-		map <uint, uint> equation_map;
+		vector<int> equation_vector;
+		map<int, int> equation_map;
 		for (auto x: *it) {
 			if (x != dsu[x])
 				change = 1;
@@ -1097,10 +1089,10 @@ void simple_linear_propagation(set <vector <uint>> &linear_constraints,
 		}
 		else if (change) {
 			changes.push_back(equation_vector);
-			// for (uint x: equation_vector) {
-			// 	if (x != dsu[x])
-			// 		clog << "!!!\n";
-			// }
+			for (int x: equation_vector) {
+				if (x != dsu[x])
+					clog << "!!!\n";
+			}
 			it = linear_constraints.erase(it);
 			continue;
 		}
@@ -1112,20 +1104,20 @@ void simple_linear_propagation(set <vector <uint>> &linear_constraints,
 }
 
 
-void linear_propagation(set <vector <uint>> &linear_constraints,
-		vector <vector <uint>> &relations)
+void linear_propagation(set<vector<int>> &linear_constraints,
+		vector<vector<int>> &relations)
 {
-	vector <vector <uint>> equations_by_var(vars_cnt + 1);
+	vector<vector<int>> equations_by_var(vars_cnt + 1);
 	int counter = 0;
 	/* Gauss algorithm stage 1 */
 	for (auto it = linear_constraints.begin(); it != linear_constraints.end(); ++it) {
-		for (uint i = 1; i < (*it).size(); ++i)
+		for (int i = 1; i < (*it).size(); ++i)
 			equations_by_var[(*it)[i] / 2].push_back(counter);
 		++counter;
 		auto it1 = it;
 		++it1;
 		while (it1 != linear_constraints.end() && ((*it1)[0] / 2) == ((*it)[0] / 2)) {
-			vector <uint> res;
+			vector<int> res;
 			
 			equations_xor(*it, *it1, res);
 			if (!res.empty())
@@ -1133,11 +1125,11 @@ void linear_propagation(set <vector <uint>> &linear_constraints,
 			it1 = linear_constraints.erase(it1);
 		}
 	}
-	/// СОХРАНИТЬ СИСТЕМУ В vector <vector <int>> ls
+	/// СОХРАНИТЬ СИСТЕМУ В vector<vector<int>> ls
 	/// ДЛЯ КАЖДОГО x \in ls СОХРАНИТЬ ВСЕ УРАВНЕНИЯ, СОДЕРЖАЩИЕ x[0] или x[0] ^ 1
-	/// ИСПОЛЬЗОВАТЬ vector <vector <int>> equations_by_vars РАЗМЕРА vars_cnt + 1
+	/// ИСПОЛЬЗОВАТЬ vector<vector<int>> equations_by_vars РАЗМЕРА vars_cnt + 1
 		
-	vector <vector <uint>> ls(all(linear_constraints));
+	vector<vector<int>> ls(all(linear_constraints));
 	/* Gauss algorithm stage 2 */
 	for (int i = ls.size() - 1; i >= 0; --i) {
 		/// ЕСЛИ ls[i] СОДЕРЖИТ ЛИНЕЙНОЕ СООТНОШЕНИЕ
@@ -1146,7 +1138,7 @@ void linear_propagation(set <vector <uint>> &linear_constraints,
 			relations.push_back(ls[i]);
 
 		for (int j : equations_by_var[ls[i][0] / 2]) {
-			vector <uint> res;
+			vector<int> res;
 			equations_xor(ls[i], ls[j], res);
 			ls[j] = res;
 			if (ls[j].size() <= 2)
@@ -1158,9 +1150,9 @@ void linear_propagation(set <vector <uint>> &linear_constraints,
 }
 
 
-char analyze_relations(vector <vector <uint>> &relations,
-		vector <char> &vars_values, vector <char> &is_def,
-		vector <uint> &dsu, vector <vector <uint>> &classes)
+char analyze_relations(vector<vector<int>> &relations,
+		vector<char> &vars_values, vector<char> &is_def,
+		vector<int> &dsu, vector<vector<int>> &classes)
 {
 	if (relations.empty())
 		return 0;
@@ -1191,19 +1183,19 @@ char analyze_relations(vector <vector <uint>> &relations,
 }
 
 
-void simplify_aig(vector <char> &vars_values, vector <char> &is_def,
-		vector <uint> &dsu, vector <vector <uint>> &classes,
-		vector <char> &useless_equations,
-		set <vector <uint>> &linear_constraints,
-		map <vector <uint>, set <vector <char>>> &learnts)
+void simplify_aig(vector<char> &vars_values, vector<char> &is_def,
+		vector<int> &dsu, vector<vector<int>> &classes,
+		vector<char> &useless_equations,
+		set<vector<int>> &linear_constraints,
+		map<vector<int>, set<vector<char>>> &learnts)
 {
-	map <pair <uint, uint>, uint> gate_pairs;
+	map<pair <int, int>, int> gate_pairs;
 
 	while (true) {
 		char cnt;
 		while (true) {
 			cnt = 0;
-			for (uint i = 0; i < and_equations_cnt; ++i) {
+			for (int i = 0; i < and_equations_cnt; ++i) {
 				if (useless_equations[i])
 					continue;
 
@@ -1214,13 +1206,13 @@ void simplify_aig(vector <char> &vars_values, vector <char> &is_def,
 
 				if (useless) {
 					useless_equations[i] = 1;
-					// TODO: STORE equations COPY IN list<and_equation> AND ERASE e FROM IT HERE
+					// TODO: STORE equations COPY IN list<AndEquation> AND ERASE e FROM IT HERE
 				}
 			}
 			if (!cnt)
 				break;
 		}
-		vector <vector <uint>> relations;
+		vector<vector<int>> relations;
 		simple_linear_propagation(linear_constraints, relations, vars_values, is_def, dsu);
 		cnt |= analyze_relations(relations, vars_values, is_def, dsu, classes);
 
@@ -1238,21 +1230,21 @@ void simplify_aig(vector <char> &vars_values, vector <char> &is_def,
 }
 
 
-void build_new_aig(vector <char> &vars_values, vector <char> &is_def,
-		vector <uint> &dsu, vector <vector <uint>> &classes,
-		vector <and_equation> &new_equations, const vector <char> &useless_equations,
-		vector <uint> &new_key_vars, vector <uint> &new_output_vars,
-		set <vector <uint>> &linear_constraints,
-		map <vector <uint>, set <vector <char>>> &learnts,
-		vector <uint> &vars_map)
+void build_new_aig(vector<char> &vars_values, vector<char> &is_def,
+		vector<int> &dsu, vector<vector<int>> &classes,
+		vector<AndEquation> &new_equations, const vector<char> &useless_equations,
+		vector<int> &new_key_vars, vector<int> &new_output_vars,
+		set<vector<int>> &linear_constraints,
+		map<vector<int>, set<vector<char>>> &learnts,
+		vector<int> &vars_map)
 {
 	vars_map.resize(2 * (vars_cnt + 1), 0);
-	vector <char> used(2 * (vars_cnt + 1), 0);
-	for (uint i = 2; i <= 2 * vars_cnt; i += 2) {
+	vector<char> used(2 * (vars_cnt + 1), 0);
+	for (int i = 2; i <= 2 * vars_cnt; i += 2) {
 		if (used[dsu[i]])
 			continue;
-		uint mn = i;
-		uint h = dsu[mn];
+		int mn = i;
+		int h = dsu[mn];
 		if (mn == h) {
 			used[mn] = 1;
 			used[mn ^ 1] = 1;
@@ -1260,7 +1252,7 @@ void build_new_aig(vector <char> &vars_values, vector <char> &is_def,
 		}
 		swap(classes[h], classes[mn]);
 		swap(classes[h ^ 1], classes[mn ^ 1]);
-		for (uint x: classes[mn]) {
+		for (int x: classes[mn]) {
 			dsu[x] = mn;
 			dsu[x ^ 1] = mn ^ 1;
 		}
@@ -1271,8 +1263,8 @@ void build_new_aig(vector <char> &vars_values, vector <char> &is_def,
 	}
 	// now dsu[x] <= x \forall x
 
-	vector <uint> useless_variables(2 * (vars_cnt + 1), 1);
-	for (uint i = 0; i < equations.size(); ++i) {
+	vector<int> useless_variables(2 * (vars_cnt + 1), 1);
+	for (int i = 0; i < equations.size(); ++i) {
 		if (!useless_equations[i]) {
 			useless_variables[dsu[equations[i].x]] = 0;
 			useless_variables[dsu[equations[i].x] ^ 1] = 0;
@@ -1284,7 +1276,7 @@ void build_new_aig(vector <char> &vars_values, vector <char> &is_def,
 	}
 
 	// формирование linear_constraints
-	set <vector <uint>> linear_constraints_copy;
+	set<vector<int>> linear_constraints_copy;
 	for (auto v: linear_constraints) {
 		char b = 0;
 		for (auto &x: v) {
@@ -1304,11 +1296,11 @@ void build_new_aig(vector <char> &vars_values, vector <char> &is_def,
 	}
 
 	// формирование learnts
-	map <vector <uint>, set <vector <char>>> learnts_copy;
+	map<vector<int>, set<vector<char>>> learnts_copy;
 	for (auto &p: learnts) {
 		auto key = p.first;
-		vector <vector <char>> values(all(p.second));
-		for (uint i = 0; i < key.size(); ++i) {
+		vector<vector<char>> values(all(p.second));
+		for (int i = 0; i < key.size(); ++i) {
 			key[i] = dsu[key[i]];
 			if (key[i] & 1) {
 				key[i] ^= 1;
@@ -1327,8 +1319,8 @@ void build_new_aig(vector <char> &vars_values, vector <char> &is_def,
 	}
 
 	// формирование vars_map
-	uint var = 1;	
-	for (uint i = 2; i <= 2 * vars_cnt; i += 2) {
+	int var = 1;	
+	for (int i = 2; i <= 2 * vars_cnt; i += 2) {
 		if (!useless_variables[i]) {
 			vars_map[i] = 2 * var;
 			vars_map[i ^ 1] = 2 * var + 1;
@@ -1337,8 +1329,8 @@ void build_new_aig(vector <char> &vars_values, vector <char> &is_def,
 	}
 
 	// формирование new_key_vars
-	for (uint i = 0; i < key_vars_cnt; ++i) {
-		uint key_var = dsu[key_vars[i]];
+	for (int i = 0; i < key_vars_cnt; ++i) {
+		int key_var = dsu[key_vars[i]];
 		if (!useless_variables[key_var]) {
 			if (is_def[key_var])
 				clog << "warning: var " << key_var << " " << vars_map[key_var] << " is defined but not useless" << endl;
@@ -1347,8 +1339,8 @@ void build_new_aig(vector <char> &vars_values, vector <char> &is_def,
 	}
 
 	// формирование new_output_vars
-	for (uint i = 0; i < output_vars_cnt; ++i) {
-		uint out_var = dsu[output_vars[i]];
+	for (int i = 0; i < output_vars_cnt; ++i) {
+		int out_var = dsu[output_vars[i]];
 		if (!useless_variables[out_var]) {
 			if (is_def[out_var])
 				clog << "warning: var " << out_var << " " << vars_map[out_var] << " is defined but not useless" << endl;
@@ -1357,34 +1349,34 @@ void build_new_aig(vector <char> &vars_values, vector <char> &is_def,
 	}
 
 	// формирование new_equations
-	for (uint i = 0; i < and_equations_cnt; ++i) {
+	for (int i = 0; i < and_equations_cnt; ++i) {
 		if (useless_equations[i])
 			continue;
 		auto e = equations[i];
-		uint x = vars_map[dsu[e.x]];
-		uint y = vars_map[dsu[e.y]];
-		uint z = vars_map[dsu[e.z]];
+		int x = vars_map[dsu[e.x]];
+		int y = vars_map[dsu[e.y]];
+		int z = vars_map[dsu[e.z]];
 		new_equations.push_back({x, y, z});
 	}
 }
 
 
-void print_aig(const string &out_filename, vector <and_equation> &new_equations,
-		vector <uint> &new_key_vars, vector <uint> &new_output_vars, vector <uint> &new_vars)
+void print_aig(const string &out_filename, vector<AndEquation> &new_equations,
+		vector<int> &new_key_vars, vector<int> &new_output_vars, vector<int> &new_vars)
 {
-	uint new_key_vars_cnt = new_key_vars.size();
-	uint new_output_vars_cnt = new_output_vars.size();
-	uint new_vars_cnt = new_equations.size() + new_key_vars_cnt;
-	uint new_latches_cnt = 0;
+	int new_key_vars_cnt = new_key_vars.size();
+	int new_output_vars_cnt = new_output_vars.size();
+	int new_vars_cnt = new_equations.size() + new_key_vars_cnt;
+	int new_latches_cnt = 0;
 
 	ofstream fout(out_filename.data());
 
 	fout << "aag " << new_vars_cnt << " " << new_key_vars_cnt << " " << new_latches_cnt << " "
 		 << new_output_vars_cnt << " " << new_equations.size() << endl;
-	for (uint i = 0; i < new_key_vars_cnt; ++i)
+	for (int i = 0; i < new_key_vars_cnt; ++i)
 		fout << new_key_vars[i] << "\n";
 
-	for (uint i = 0; i < new_output_vars_cnt; ++i) {
+	for (int i = 0; i < new_output_vars_cnt; ++i) {
 			fout << new_output_vars[i] << "\n";
 	}
 
@@ -1399,29 +1391,29 @@ void aig_to_aig(const string &substitution_filename, const string &out_filename,
 		const string &linear_constraints_filename, const string &learnts_filename,
 		const string &core_vars_filename)
 {
-	clog << "simplifying aig ..." << endl;
+	clog << "simplifying aig" << endl;
 
 // 	int counter = 0;
 //	while (true) {
 // cout << counter << endl;
-	vector <char> vars_values(2 * (vars_cnt + 1), 0),
+	vector<char> vars_values(2 * (vars_cnt + 1), 0),
 		is_def(2 * (vars_cnt + 1), 0);
-	vector <uint> dsu(2 * (vars_cnt + 1));
-	vector <vector <uint>> classes(2 * (vars_cnt + 1));
-	vector <char> useless_equations(and_equations_cnt, 0);
+	vector<int> dsu(2 * (vars_cnt + 1));
+	vector<vector<int>> classes(2 * (vars_cnt + 1));
+	vector<char> useless_equations(and_equations_cnt, 0);
 	auto linear_constraints = pattern_linear_constraints;
 	auto learnts = pattern_learnts;
 
-	for (uint i = 0; i < dsu.size(); ++i) {
+	for (int i = 0; i < dsu.size(); ++i) {
 		dsu[i] = i;
 		classes[i].push_back(i);
 	}
 
 	read_substitution(substitution_filename, vars_values, is_def, dsu);
-	vector <uint> core_vars;
+	vector<int> core_vars;
 	read_core_vars(core_vars_filename, core_vars);
 
-	vars_random_assignment(core_vars, vars_values, is_def, dsu);
+	// vars_random_assignment(core_vars, vars_values, is_def, dsu);
 // cout << counter << endl;
 	simplify_aig(vars_values, is_def, dsu, classes, useless_equations,
 		linear_constraints, learnts);
@@ -1437,8 +1429,8 @@ void aig_to_aig(const string &substitution_filename, const string &out_filename,
 // 		++counter;
 //	}
 
-	vector <and_equation> new_equations;
-	vector <uint> new_key_vars, new_output_vars, vars_map;
+	vector<AndEquation> new_equations;
+	vector<int> new_key_vars, new_output_vars, vars_map;
 
 	build_new_aig(vars_values, is_def, dsu, classes,
 		new_equations, useless_equations,
@@ -1453,6 +1445,7 @@ void aig_to_aig(const string &substitution_filename, const string &out_filename,
 	print_new_vars(core_vars, vars_map, "new_core_vars");
 
 	clog << "ok" << endl;
+
 }
 
 
@@ -1471,7 +1464,7 @@ int main(int argc, char *argv[])
 
 	read_aig(in_filename);
 
-	find_linear_constraints(pattern_linear_constraints);
+	// find_linear_constraints(pattern_linear_constraints);
 	read_linear_constraints(pattern_linear_constraints, linear_constraints_filename);
 	reduce_constraints(pattern_linear_constraints);
 
