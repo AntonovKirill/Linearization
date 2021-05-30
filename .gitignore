@@ -1,2 +1,3 @@
 modify_repo.bat
 bin/*
+src/.vscode
