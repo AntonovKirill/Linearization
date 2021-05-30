@@ -4,7 +4,7 @@
 
 using namespace std;
 
-mt19937_64 gen(time(0));
+// mt19937_64 gen(time(0));
 
 /// УРАВНЕНИЕ and
 /// x ^ y & z = 0 ( x = y & z )
@@ -27,10 +27,10 @@ bool operator< (const AndEquation &a, const AndEquation &b)
 	return (((a.y & 1) << 1) ^ (a.z & 1)) < (((b.y & 1) << 1) ^ (b.z & 1));
 }
 
-char random_bool()
-{
-	return gen() & 1;
-}
+// char random_bool()
+// {
+// 	return gen() & 1;
+// }
 
 
 /// МНОЖЕСТВО ВСЕХ УРАВНЕНИЙ
@@ -90,7 +90,6 @@ void init(int argc, char *argv[],
 			cout << "  -c, --core <file>			default=core			  Файл с описанием множества переменных ядра.\n";
 			cout << "  -L, --linear <file>			default=linear			  Файл дополнительных линейных ограничений.\n";
 			cout << "  -l, --learnts <file>			default=learnts			  Файл дополнительных дизъюнктов.\n";
-			cout << "  -k, --key-size <size>		default=input_vars_cnt	  Число бит ключа.\n";
 			exit(0);
 		}
 		else if (param == "--input" || param == "-i") {
@@ -104,12 +103,6 @@ void init(int argc, char *argv[],
 				out_filename = (string) (argv[++i]);
 			else
 				out_filename = (string) (argv[i] + j + 1);
-		}
-		else if (param == "--key-size" || param == "-k") {
-			if (argv[i][j] == 0)
-				key_vars_cnt = (int) atoi(argv[++i]);
-			else
-				key_vars_cnt = (int) atoi(argv[i] + j + 1);
 		}
 		else if (param == "--substitution" || param == "-s") {
 			if (argv[i][j] == 0)
@@ -150,11 +143,6 @@ void init(int argc, char *argv[],
 			"parameter -o (--output) is required\n";
 		exit(0);
 	}
-	if (key_vars_cnt < 0) {
-		cerr << "error: void init(): " <<
-			"value of parameter -k (--key-size) must be a positive number\n";
-		exit(0);
-	}
 	if (sub_filename.empty()) {
 		sub_filename = "substitution";
 		clog << "warning: void init(): " <<
@@ -188,28 +176,6 @@ void order(vector<T> &v) {
 	v.shrink_to_fit();
 }
 
-/*
-void log_linear_constraints(const set<vector<int>> &linear_constraints)
-{
-	clog << "linear constraints:\n";
-	for (auto &v: linear_constraints) {
-		for (auto x: v)
-			clog << x << " ";
-		clog << "\n";
-	}
-}
-*/
-/*
-void log_learnts(const map<vector<int>, set<vector<char>>> &learnts) {
-	for (auto &p: learnts) {
-		for (auto &v: p.second) {
-			for (int i = 0; i < p.first.size(); ++i)
-				clog << (v[i] ? "-" : "") << p.first[i] / 2 << " ";
-			clog << "0\n";
-		}
-	}
-}
-*/
 
 void print_new_linear_constraints(const set<vector<int>> &linear_constraints,
 		const string &filename, const vector<int> &vars_map)
@@ -222,6 +188,7 @@ void print_new_linear_constraints(const set<vector<int>> &linear_constraints,
 	}
 	fout.close();
 }
+
 
 /// PRINTS new_learnts IN DIMACS FORMAT
 void print_new_learnts(const map<vector<int>, set<vector<char>>> &learnts,
@@ -302,19 +269,6 @@ void equations_xor(vector<int> e1, vector<int> e2,
 	}
 }
 
-/*
-void log_vars_values(vector<char> &vars_values, vector<char> &is_def,
-		vector<int> &dsu)
-{
-	clog << "variables values\n" <<
-		"var is_def value dsu\n";
-	for (int x = 1; x <= vars_cnt; ++x) {
-		int y = dsu[2 * x];
-		clog << 2 * x << " " << (int)is_def[y] << " " <<
-			(int)vars_values[y] << " " << y << "\n";
-	}
-}
-*/
 
 void reduce_constraints(set<vector<int>> &linear_constraints) {
 	vector<vector<int>> new_lc;
@@ -434,20 +388,35 @@ void read_linear_constraints(set<vector<int>> &linear_constraints,
 	ifstream fin(filename.data());
 
 	string line;
-	stringstream ss;
+
 	while (getline(fin, line)) {
-		ss.clear();
+		stringstream ss;
 		ss << line;
+		
 		int x;
 		vector<int> equation;
 		while (ss >> x)
 			equation.push_back(x);
+		
+		if (equation.empty())
+			continue;
+		
+		int r = 0;
+		for (auto &x: equation) {
+			r ^= x & 1;
+			x &= -2;
+		}
+		
+		sort(all(equation));
+		equation[0] ^= r;
+
 		linear_constraints.insert(equation);
 	}
 
 	fin.close();
 	clog << "ok" << endl;
 }
+
 
 /// READ LEARNTS FROM THE FILE.
 /// DATA ARE PRESENTED IN DIMACS FORMAT (WITHOUT HEADER).
@@ -1367,6 +1336,7 @@ void print_aig(const string &out_filename, vector<AndEquation> &new_equations,
 	int new_key_vars_cnt = new_key_vars.size();
 	int new_output_vars_cnt = new_output_vars.size();
 	int new_vars_cnt = new_equations.size() + new_key_vars_cnt;
+	// TODO: add linear constraints count or build all vars set
 	int new_latches_cnt = 0;
 
 	ofstream fout(out_filename.data());
@@ -1394,8 +1364,8 @@ void aig_to_aig(const string &substitution_filename, const string &out_filename,
 	clog << "simplifying aig" << endl;
 
 // 	int counter = 0;
-//	while (true) {
-// cout << counter << endl;
+// 	while (true) {
+// 	cout << counter << endl;
 	vector<char> vars_values(2 * (vars_cnt + 1), 0),
 		is_def(2 * (vars_cnt + 1), 0);
 	vector<int> dsu(2 * (vars_cnt + 1));
@@ -1418,15 +1388,15 @@ void aig_to_aig(const string &substitution_filename, const string &out_filename,
 	simplify_aig(vars_values, is_def, dsu, classes, useless_equations,
 		linear_constraints, learnts);
 
-	bool ok = 1;
-	for (auto x: output_vars)
-		if (!is_def[dsu[x]])
-			ok = 0;
-	if (!ok)
-		cout << "error" << endl;
-	else
-		cout << "ok" << endl;
-// 		++counter;
+	// bool ok = 1;
+	// for (auto x: output_vars)
+	// 	if (!is_def[dsu[x]])
+	// 		ok = 0;
+	// if (!ok)
+	// 	cout << "error" << endl;
+	// else
+	// 	cout << "ok" << endl;
+	// 	++counter;
 //	}
 
 	vector<AndEquation> new_equations;
