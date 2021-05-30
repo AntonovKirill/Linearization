@@ -256,8 +256,15 @@ void find_xor_gates(set<vector<int>> &linear_constraints)
 	
 	for (int i = 0; i < and_equations_cnt; ++i)
 		index[equations[i].x / 2] = i;
+	
+	map<int, int> gates_freq;
+	for (auto &e: equations) {
+		++gates_freq[e.y / 2];
+		++gates_freq[e.z / 2];
+	}
 
-	// std::vector<std::vector<int>> graph;
+	int vars_cnt_new = vars_cnt;
+
 	for (int i = 0; i < and_equations_cnt; ++i) {
 		auto e = equations[i];
 
@@ -271,6 +278,8 @@ void find_xor_gates(set<vector<int>> &linear_constraints)
 		
 		if (iy != -1 && iz != -1) {
 			int y = ey.y / 2, z = ey.z / 2;
+
+			// xor operator condition
 			if (ez.y / 2 == y && ez.z / 2 == z) {
 				used[i] = 1;
 				used[iy] = 1;
@@ -287,6 +296,50 @@ void find_xor_gates(set<vector<int>> &linear_constraints)
 					std::clog << "lost variable: " << y << std::endl;
 				if (index[z] != -1 && !used_lin[index[z]] && used[index[z]])
 					std::clog << "lost variable: " << z << std::endl;
+			}
+			// ternary conditional operator condition
+			else {
+				if ((ez.z ^ ey.y) == 1 || (ez.z ^ ey.z) == 1)
+					swap(ez.y, ez.z);
+				if ((ey.z ^ ez.y) == 1)
+					swap(ey.y, ey.z);
+
+				if ((ey.y ^ ez.y) == 1) {
+					used[i] = 1;
+
+					int u;
+					if (gates_freq[y_] == 1) {
+						// erase ey.x = ey.y & ey.z, add ey.x = ey.z + ez.z
+						used[iy] = 1;
+						u = ey.x;
+						linear_constraints.insert({u, ey.z, ez.z});
+					}
+					else {
+						u = 2 * ++vars_cnt_new;
+						// add u = ey.z + ez.z
+						linear_constraints.insert({u, ey.z, ez.z});
+					}
+
+					int v;
+					if (gates_freq[z_] == 1) {
+						// erase ez.x = ez.y & ez.z, add ez.x = u & ey.y
+						v = ez.x;
+						equations[iz] = {v, u, ey.y};
+					}
+					else {
+						v = 2 * ++vars_cnt_new;
+						// add equation v = u & ey.y
+						equations.push_back({v, u, ey.y});
+					}
+					
+					used_lin[i] = 1;
+					linear_constraints.insert({e.x ^ 1, v, ez.z});
+					
+					if (index[y] != -1 && !used_lin[index[y]] && used[index[y]])
+						std::clog << "lost variable: " << y << std::endl;
+					if (index[z] != -1 && !used_lin[index[z]] && used[index[z]])
+						std::clog << "lost variable: " << z << std::endl;
+				}
 			}
 		}
 	}
