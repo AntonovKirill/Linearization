@@ -268,50 +268,93 @@ void find_xor_gates(set<vector<int>> &linear_constraints)
 	for (int i = 0; i < and_equations_cnt; ++i) {
 		auto e = equations[i];
 
-		if (!(e.y & 1) || !(e.z & 1))
-			continue;
+		int iy = index[e.y / 2], iz = index[e.z / 2];
 
-		int x = e.x / 2, y_ = e.y / 2, z_ = e.z / 2;
-		int iy = index[y_], iz = index[z_];
-		
-		auto ey = equations[iy], ez = equations[iz];
-		
 		if (iy != -1 && iz != -1) {
-			int y = ey.y / 2, z = ey.z / 2;
+			auto ey = equations[iy], ez = equations[iz];
+			// int y = ey.y / 2, z = ey.z / 2;
 
 			// xor operator condition
-			if (ez.y / 2 == y && ez.z / 2 == z) {
-				used[i] = 1;
-				used[iy] = 1;
-				used[iz] = 1;
+			if (ey.y / 2 == ez.z / 2)
+				swap(ez.y, ez.z);
+
+			if (ez.y / 2 == ey.y / 2 && ez.z / 2 == ey.z / 2) {
+				// ey.y = y, ey.z = z,
+				// ez.y = y ^ a, ez.z = z ^ b,
+				// e.y = ey.x ^ c = yz ^ c,
+				// e.z = ez.x ^ d = (y ^ a)(z ^ b) ^ d,
+				// e.x = e.y & e.z =
+				// = yz((1 ^ a)(1 ^ b) ^ c ^ d) ^ bcy ^ acz ^ c(ab ^ d)
+				char a = ez.y ^ ey.y, b = ez.z ^ ey.z,
+					c = e.y ^ ey.x, d = e.z ^ ez.x;
 				
+				used[i] = 1;
+				if (gates_freq[e.z / 2] == 1)
+					used[iz] = 1;
 				used_lin[i] = 1;
 
-				if (!((ey.y ^ ey.z) & 1))
-					linear_constraints.insert({2 * x, 2 * y, 2 * z});
-				else
-					linear_constraints.insert({2 * x ^ 1, 2 * y, 2 * z});
+				vector<int> lin;
+				lin.push_back(e.x ^ (c & ((a & b) ^ d)));
 				
-				if (index[y] != -1 && !used_lin[index[y]] && used[index[y]])
-					std::clog << "lost variable: " << y << std::endl;
-				if (index[z] != -1 && !used_lin[index[z]] && used[index[z]])
-					std::clog << "lost variable: " << z << std::endl;
-			}
-			// ternary conditional operator condition
-			else {
-				if ((ez.z ^ ey.y) == 1 || (ez.z ^ ey.z) == 1)
-					swap(ez.y, ez.z);
-				if ((ey.z ^ ez.y) == 1)
-					swap(ey.y, ey.z);
+				if (b & c)
+					lin.push_back(ey.y);
+				if (a & c)
+					lin.push_back(ey.z);
 
-				if ((ey.y ^ ez.y) == 1) {
-					used[i] = 1;
+				if (((1 ^ a) & (1 ^ b)) ^ c ^ d)
+					lin.push_back(ey.x);
+				else
+					used[iy] = 1;
+
+				linear_constraints.insert(lin);
+
+				if (index[ey.y / 2] != -1 && !used_lin[index[ey.y / 2]] && used[index[ey.y / 2]])
+					std::clog << "lost variable: " << ey.y / 2 << std::endl;
+				if (index[ey.z / 2] != -1 && !used_lin[index[ey.z / 2]] && used[index[ey.z / 2]])
+					std::clog << "lost variable: " << ey.z / 2 << std::endl;
+
+				continue;
+			}
+
+			// ternary conditional operator condition
+			if ((ez.z ^ ey.y) == 1 || (ez.z ^ ey.z) == 1)
+				swap(ez.y, ez.z);
+			if ((ey.z ^ ez.y) == 1)
+				swap(ey.y, ey.z);
+
+			if ((ey.y ^ ez.y) == 1) {
+				// ey.y = x, ey.z = y,
+				// ez.y = x ^ 1, ez.z = z,
+				// e.y = ey.x ^ a = xy ^ a,
+				// e.z = ez.x ^ b = (x ^ 1)z ^ b,
+				// u = by ^ az, v = xu,
+				// e.x = e.y & e.z = bxy ^ axz ^ az ^ ab =
+				// = x(by ^ az) ^ az ^ ab = v ^ az ^ ab
+				char a = e.y ^ ey.x, b = e.z ^ ez.x;
+
+				used[i] = 1;
+
+				vector<int> lin;
+				lin.push_back(e.x ^ (a & b));
+
+				if (a == 0 && b == 0) { // v = 0
+					// do nothing
+				}
+				else if (a == 0) { // v ^ az = xy
+					lin.push_back(ey.x);
+				}
+				else if (b == 0) { // v ^ az = (x ^ 1)z
+					lin.push_back(ez.x);
+				}
+				else { // u = y ^ z, v ^ az = xu ^ z
+					lin.push_back(ez.z);
 
 					int u;
-					if (gates_freq[y_] == 1) {
-						// erase ey.x = ey.y & ey.z, add ey.x = ey.z + ez.z
-						used[iy] = 1;
+					if (gates_freq[e.y / 2] == 1) {
 						u = ey.x;
+						// erase ey.x = ey.y & ey.z, add u = ey.z + ez.z
+						used[iy] = 1;
+						used_lin[iy] = 1;
 						linear_constraints.insert({u, ey.z, ez.z});
 					}
 					else {
@@ -321,25 +364,29 @@ void find_xor_gates(set<vector<int>> &linear_constraints)
 					}
 
 					int v;
-					if (gates_freq[z_] == 1) {
-						// erase ez.x = ez.y & ez.z, add ez.x = u & ey.y
+					if (gates_freq[e.z / 2] == 1) {
 						v = ez.x;
+						// erase ez.x = ez.y & ez.z, add v = u & ey.y
 						equations[iz] = {v, u, ey.y};
 					}
 					else {
 						v = 2 * ++vars_cnt_new;
-						// add equation v = u & ey.y
+						// add v = u & ey.y
 						equations.push_back({v, u, ey.y});
 					}
-					
-					used_lin[i] = 1;
-					linear_constraints.insert({e.x ^ 1, v, ez.z});
-					
-					if (index[y] != -1 && !used_lin[index[y]] && used[index[y]])
-						std::clog << "lost variable: " << y << std::endl;
-					if (index[z] != -1 && !used_lin[index[z]] && used[index[z]])
-						std::clog << "lost variable: " << z << std::endl;
+
+					lin.push_back(v);
 				}
+
+				used_lin[i] = 1;
+				linear_constraints.insert(lin);
+
+				if (index[ey.y / 2] != -1 && !used_lin[index[ey.y / 2]] && used[index[ey.y / 2]])
+					std::clog << "lost variable: " << ey.y / 2 << std::endl;
+				if (index[ey.z / 2] != -1 && !used_lin[index[ey.z / 2]] && used[index[ey.z / 2]])
+					std::clog << "lost variable: " << ey.z / 2 << std::endl;
+
+				continue;
 			}
 		}
 	}
@@ -351,7 +398,7 @@ void find_xor_gates(set<vector<int>> &linear_constraints)
 	}
 	
 	std::clog << "new aig:\n";
-	std::clog << vars_cnt << " " << input_vars_cnt << " " << latches_cnt << " "
+	std::clog << "aag " << vars_cnt << " " << input_vars_cnt << " " << latches_cnt << " "
 		<< output_vars_cnt << " " << equations_new.size() << "\n";
 	for (auto &e: equations_new)
 		std::clog << e.x << " " << e.y << " " << e.z << "\n";
