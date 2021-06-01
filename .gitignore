@@ -1,3 +1,4 @@
 modify_repo.bat
-bin/*
+bin
 src/.vscode
+src/obsolete
