@@ -247,9 +247,11 @@ void read_linear_constraints(set<vector<int>> &linear_constraints,
 }
 
 
-void find_xor_gates(set<vector<int>> &linear_constraints)
+void find_xor_gates(set<vector<int>> &linear_constraints, string &filename)
 {
-	clog << "finding xor gates ... ";
+	clog << "finding xor gates ...\n";
+	
+	ofstream fout(filename.data());
 	
 	std::vector<char> used(and_equations_cnt, 0), used_lin(and_equations_cnt, 0);
 	std::vector<int> index(vars_cnt + 1, -1);
@@ -397,20 +399,31 @@ void find_xor_gates(set<vector<int>> &linear_constraints)
 			equations_new.push_back(equations[i]);
 	}
 	
-	std::clog << "new aig:\n";
-	std::clog << "aag " << vars_cnt << " " << input_vars_cnt << " " << latches_cnt << " "
+	std::clog << "new aig: \'" << filename << "\'\n";
+	fout << "aag " << vars_cnt << " " << input_vars_cnt << " " << latches_cnt << " "
 		<< output_vars_cnt << " " << equations_new.size() << "\n";
-	for (auto &e: equations_new)
-		std::clog << e.x << " " << e.y << " " << e.z << "\n";
-	std::clog << "\n";
 	
-	std::clog << "new linear constraints:\n";
+	for (int x: input_vars)
+		fout << x << "\n";
+	
+	for (int x: output_vars)
+		fout << x << "\n";
+	
+	for (auto &e: equations_new)
+		fout << e.x << " " << e.y << " " << e.z << "\n";
+	
+	fout.close();
+
+	std::clog << "new linear constraints: \'linear\'\n";	
+	fout.open("linear");
+
 	for (auto &v: linear_constraints) {
 		for (auto x: v)
-			clog << x << " ";
-		std::clog << "\n";
+			fout << x << " ";
+		fout << "\n";
 	}
-	std::clog << std::endl;
+	
+	fout.close();
 	
 	std::set<int> all_vars_new;
 	
@@ -426,12 +439,12 @@ void find_xor_gates(set<vector<int>> &linear_constraints)
 	}
 	
 	clog << "all vars new size: " << all_vars_new.size() << std::endl;
-	
-	
+
 	// std::vector<int> index_new(vars_cnt + 1, -1);
-	
+
 	// for (int i = 0; i < and_equations_cnt; ++i)
 		// index_new[equations[i].x / 2] = i;
+
 }
 
 
@@ -449,6 +462,6 @@ int main(int argc, char *argv[])
 
 	read_aig(in_filename);
 
-	find_xor_gates(pattern_linear_constraints);
+	find_xor_gates(pattern_linear_constraints, out_filename);
 
 }
