@@ -245,24 +245,6 @@ void equations_xor(vector<int> e1, vector<int> e2,
 }
 
 
-void reduce_constraints(set<vector<int>> &linear_constraints)
-{
-	vector<vector<int>> new_lc;
-	for (auto e: linear_constraints) {
-		char b = 0;
-		for (auto &x: e) {
-			b ^= x & 1;
-			x &= -2;
-		}
-		sort(all(e));
-		e[0] ^= b;
-		new_lc.push_back(e);
-	}
-	linear_constraints.clear();
-	linear_constraints.insert(all(new_lc));
-}
-
-
 int random_int()
 {
 	gen_mtx.lock();
@@ -753,9 +735,8 @@ char propagation(const AndEquation &e,
 
 
 void simple_linear_propagation(set<vector<int>> &linear_constraints,
-		vector<vector<int>> &relations,
-		vector<char> &vars_values, vector<char> &is_def,
-		vector<int> &dsu)
+		vector<vector<int>> &relations, vector<char> &vars_values,
+		vector<char> &is_def, vector<int> &dsu)
 {
 	vector<vector<int>> changes;
 
@@ -772,6 +753,7 @@ void simple_linear_propagation(set<vector<int>> &linear_constraints,
 
 			if (is_def[x]) {
 				value ^= vars_values[x];
+				change = 1;
 				continue;
 			}
 
@@ -805,7 +787,6 @@ void simple_linear_propagation(set<vector<int>> &linear_constraints,
 		// else {
 		// 	useless = 0;
 		// }
-
 
 		if (useless) {
 			it = linear_constraints.erase(it);
@@ -863,46 +844,26 @@ char analyze_relations(vector<vector<int>> &relations,
 	return res;
 }
 
-
-int get_rank(set<vector<int>> linear_constraints)
+char analyze_equations(vector<char> &vars_values, vector<char> &is_def,
+		vector<int> &dsu, vector<vector<int>> &classes,
+		vector<char> &useless_equations)
 {
-	int counter = 0;
-	/* Gauss algorithm stage 1 */
-	for (auto it = linear_constraints.begin(); it != linear_constraints.end(); ++it) {
-		++counter;
-		auto it1 = it;
-		++it1;
-		while (it1 != linear_constraints.end() && ((*it1)[0] & -2) == ((*it)[0] & -2)) {
-			vector<int> res;
-			equations_xor(*it, *it1, res);
-			if (!res.empty())						//
-				linear_constraints.insert(res);		// TODO: is linear_constraints able to be broken?
-			it1 = linear_constraints.erase(it1);	//
-		}
-	}
-	return linear_constraints.size();
-}
+	char res = 0;
 
-
-void insert_linear_constraints(const map<vector<Bit>, vector<vector<int>>> &lt,
-		set<vector<int>> &lc, const vector<char> &vars_values)
-{
-	for (const auto &p: lt) {
-		auto key = p.first;
-		bool next = 0;
-
-		for (auto &b: key) {
-			if (vars_values[output_vars[b.n]] != b.bit) {
-				next = 1;
-				break;
-			}
-		}
-
-		if (next)
+	for (int i = 0; i < and_equations_cnt; ++i) {
+		if (useless_equations[i])
 			continue;
-		
-		lc.insert(all(p.second));
+
+		char useless;
+		auto e = equations[i];
+		res |= propagation(e, vars_values, is_def, dsu, classes, useless);
+		if (useless) {
+			useless_equations[i] = 1;
+			// TODO: STORE equations COPY IN list<AndEquation> AND ERASE e FROM IT HERE
+		}
 	}
+
+	return res;
 }
 
 
@@ -919,21 +880,7 @@ void find_output(char &a, vector<char> &vars_values, vector<char> &is_def)
 	}
 
 	while (true) {
-		char cnt = 0;
-
-		for (int i = 0; i < and_equations_cnt; ++i) {
-			if (useless_equations[i])
-				continue;
-
-			char useless;
-			auto e = equations[i];
-
-			cnt |= propagation(e, vars_values, is_def,
-				dsu, classes, useless);
-				
-			if (useless)
-				useless_equations[i] = 1;
-		}
+		char cnt = analyze_equations(vars_values, is_def, dsu, classes, useless_equations);
 
 		vector<vector<int>> relations;
 		simple_linear_propagation(linear_constraints, relations, vars_values, is_def, dsu);
@@ -950,26 +897,6 @@ void find_output(char &a, vector<char> &vars_values, vector<char> &is_def)
 		vars_values[x] = vars_values[dsu[x]];
 		vars_values[x ^ 1] = vars_values[dsu[x ^ 1]];
 	}
-}
-
-
-void save_input_interp(vector<char> &core_interp, vector<char> &input_interp,
-		vector<char> &vars_values)
-{
-	for (int j = 0; j < core_vars_cnt; ++j)
-		core_interp[j] = vars_values[core_vars[j]];
-	for (int j = 0; j < input_vars_cnt; ++j)
-		input_interp[j] = vars_values[input_vars[j]];
-}
-
-
-void save_output_interp(vector<char> &guessed_interp, vector<char> &output_interp,
-		vector<char> &vars_values)
-{
-	for (int j = 0; j < guessed_vars_cnt; ++j)
-		guessed_interp[j] = vars_values[guessed_vars[j]];
-	for (int j = 0; j < output_vars_cnt; ++j)
-		output_interp[j] = vars_values[output_vars[j]];
 }
 
 
@@ -1073,7 +1000,7 @@ long long get_ind(const vector<int> &lin)
 
 void init_selectors_map_all(int n)
 {
-	vector <int> all_vars_inv(vars_cnt, 0);
+	vector <int> all_vars_inv(vars_cnt + 1, 0);
 	for (int i = 0; i < (int)all_vars.size(); ++i)
 		all_vars_inv[all_vars[i] / 2] = i;
 
@@ -1339,7 +1266,7 @@ void predict_gates(const int k)
 
 	vector<vector<char>> save(N, vector<char> (2 * (vars_cnt + 1)));
 
-	clog << "sample generating . . . ";
+	clog << "sample generating ... ";
 	#pragma omp parallel for schedule(dynamic)
 	for (int i = 0; i < N; ++i)
 		gen_random_sample(save[i]);
@@ -1379,7 +1306,7 @@ void predict_all(const int k, const int n)
 
 	vector<vector<char>> save(N, vector<char> (2 * (vars_cnt + 1)));
 
-	clog << "sample generating . . . ";
+	clog << "sample generating ... ";
 	#pragma omp parallel for schedule(dynamic)
 	for (int i = 0; i < N; ++i)
 		gen_random_sample(save[i]);
@@ -1413,12 +1340,12 @@ int main(int argc, char *argv[])
 	read_aig(in_filename);
 
 	read_linear_constraints(pattern_linear_constraints, linear_constraints_filename);
-	reduce_constraints(pattern_linear_constraints);
 
 	read_lin_table(lin_table_filename, lin_table);
 
 	all_vars = vector<int>(all(all_vars_set));
 
 	predict_all(k, n);
+	// predict_gates(k);
 
 }
