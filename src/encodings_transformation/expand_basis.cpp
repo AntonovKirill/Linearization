@@ -58,12 +58,10 @@ int latches_cnt = 0;
 
 /// ЧТЕНИЕ ПАРАМЕТРОВ ИЗ ТЕРМИНАЛА
 void init(int argc, char *argv[],
-		string &in_filename, string &out_filename,
-		string &lin_filename)
+		string &in_filename, string &out_filename)
 {
 	in_filename  = "";
 	out_filename = "";
-	lin_filename = "";
 
 	for (int i = 1; i < (int) argc; ++i) {
 		string param;
@@ -76,7 +74,6 @@ void init(int argc, char *argv[],
 			cout << "  -h, --help                               Вывод этой справки и выход.\n";
 			cout << "  -i, --input <file>                       Файл с описанием И-Не графа.\n";
 			cout << "  -o, --output <file>                      Файл для вывода упрощённого И-Не графа.\n";
-			cout << "  -L, --linear <file>    default=linear    Файл дополнительных линейных ограничений.\n";
 			exit(0);
 		}
 		else if (param == "--input" || param == "-i") {
@@ -90,12 +87,6 @@ void init(int argc, char *argv[],
 				out_filename = (string) (argv[++i]);
 			else
 				out_filename = (string) (argv[i] + j + 1);
-		}
-		else if (param == "--linear" || param == "-L") {
-			if (argv[i][j] == 0)
-				lin_filename = (string) (argv[++i]);
-			else
-				lin_filename = (string) (argv[i] + j + 1);
 		}
 		else {
 			clog << "warning: void init(): unknown parameter: " << param << "\n";
@@ -112,11 +103,6 @@ void init(int argc, char *argv[],
 		cerr << "error: void init(): " <<
 			"parameter -o (--output) is required\n";
 		exit(0);
-	}
-	if (lin_filename.empty()) {
-		lin_filename = "linear";
-		clog << "warning: void init(): " <<
-			"additional linear constraints filename has been set to default value \'linear\'\n";
 	}
 }
 
@@ -212,38 +198,6 @@ void read_aig(const string &in_filename)
 	read_equations(fin);
 
 	fin.close();
-}
-
-
-void read_linear_constraints(set<vector<int>> &linear_constraints,
-		const string &filename)
-{
-	clog << "reading additional linear constraints from \'" << filename << "\' ... ";
-
-	ifstream fin(filename.data());
-
-	string line;
-	stringstream ss;
-	while (getline(fin, line)) {
-		ss.clear();
-		ss << line;
-		int x, rem = 0;
-		vector<int> equation;
-		while (ss >> x) {
-			equation.push_back(x & -2);
-			rem ^= x & 1;
-			all_vars_set.insert(x & -2);
-		}
-		if (equation.empty())
-			continue;
-		sort(all(equation));
-		equation[0] ^= rem;
-		linear_constraints.insert(equation);
-	}
-
-	fin.close();
-	
-	clog << "ok" << endl;
 }
 
 
@@ -457,8 +411,7 @@ int main(int argc, char *argv[])
 	string in_filename, out_filename;
 	string linear_constraints_filename;
 
-	init(argc, argv, in_filename, out_filename,
-		linear_constraints_filename);
+	init(argc, argv, in_filename, out_filename);
 
 	read_aig(in_filename);
 
