@@ -2,8 +2,6 @@
 
 #define all(x) (x).begin(), (x).end()
 
-typedef long long ll;
-
 using namespace std;
 
 int N = 0;
@@ -417,10 +415,10 @@ int bin_set_size(const vector<char> &a)
 }
 
 
-bool random_bool()
+char random_bool()
 {
 	gen_mtx.lock();
-	bool res = generator() & 1;
+	char res = generator() & 1;
 	gen_mtx.unlock();
 	return res;
 }
@@ -515,10 +513,10 @@ void read_linear_constraints(set<vector<int>> &linear_constraints,
 	ifstream fin(filename.data());
 
 	string line;
-	stringstream ss;
 	while (getline(fin, line)) {
-		ss.clear();
+		stringstream ss;
 		ss << line;
+		
 		int x, rem = 0;
 		vector<int> equation;
 		while (ss >> x) {
@@ -526,10 +524,13 @@ void read_linear_constraints(set<vector<int>> &linear_constraints,
 			rem ^= x & 1;
 			all_vars_set.insert(x & -2);
 		}
+
 		if (equation.empty())
 			continue;
+
 		sort(all(equation));
 		equation[0] ^= rem;
+
 		linear_constraints.insert(equation);
 	}
 
@@ -766,43 +767,10 @@ void vars_random_assignment(const vector<int> &vars,
 }
 
 
-void find_linear_constraints(set<vector<int>> &linear_constraints)
-{
-	clog << "finding additional linear constraints ... ";
-	map<pair <int, int>, vector<AndEquation>> similar_gates;
-	for (auto &e: equations)
-		similar_gates[{e.y & -2, e.z & -2}].push_back(e);
-
-	for (auto &p: similar_gates) {
-		auto s = p.second;
-		order(s);
-		if (s.size() == 1)
-			continue;
-
-		auto key = p.first;
-		int a = key.first + (s[0].y & 1), b = key.second + (s[0].z & 1);
-		int id0 = ((s[0].y & 1) << 1) ^ (s[0].z & 1);
-		vector<int> vars;
-
-		for (int i = 1; i < (int)s.size(); ++i) {
-			int idi = ((s[i].y & 1) << 1) ^ (s[i].z & 1) ^ id0;
-			if (idi == 1) // x0 + xi = ab + a(b + 1) = ab + ab + a = a
-				vars = {s[0].x, s[i].x, a};
-			else if (idi == 2) // x0 + xi = ab + (a + 1)b = ab + b + ab = b
-				vars = {s[0].x, s[i].x, b};
-			else // idi == 3 // x0 + xi = ab + (a + 1)(b + 1) = ab + ab + a + b + 1 = a + (b + 1)
-				vars = {s[0].x, s[i].x, a, b ^ 1};
-			linear_constraints.insert(vars);
-		}
-	}
-	clog << "ok" << endl;
-}
-
-
 /// ВЫВОД ИЗ КВАДРАТИЧНОГО УРАВНЕНИЯ.
 /// ВОЗВРАЩАЕТ 1, ЕСЛИ ХОТЬ ЧТО-ТО ВЫВЕЛОСЬ.
 /// ИНАЧЕ 0. ИСПОЛЬЗУЕТ КЛАССЫ ЭКВИВАЛЕНТНОСТИ.
-char propagation(const AndEquation &e,
+char propagation(const int ind,
 		vector<char> &vars_values, vector<char> &is_def,
 		vector<int> &dsu, vector<vector<int>> &classes,
 		map<vector<int>, set<vector<char>>> &learnts,
@@ -810,6 +778,7 @@ char propagation(const AndEquation &e,
 {
 	useless = 1;
 
+	auto e = equations[ind];
 	int x = dsu[e.x];
 	int y = dsu[e.y];
 	int z = dsu[e.z];
@@ -973,14 +942,15 @@ char propagation(const AndEquation &e,
 
 /// ВЫВОД ИЗ КВАДРАТИЧНОГО УРАВНЕНИЯ.
 /// ВОЗВРАЩАЕТ 1, ЕСЛИ ХОТЬ ЧТО-ТО ВЫВЕЛОСЬ.
-/// ИНАЧЕ 0. ДОБАВЛЕНА ПРОВЕРКА ЭКВИВАЛЕНТНОСТИ ВХОДОВ.
-char propagation(const AndEquation &e,
+/// ИНАЧЕ 0. ПРОВЕРКА ЭКВИВАЛЕНТНОСТИ ВХОДОВ.
+char propagation(const int ind,
 		vector<char> &vars_values, vector<char> &is_def,
 		vector<int> &dsu, vector<vector<int>> &classes,
 		map<pair <int, int>, int> &gate_pairs,
 		map<vector<int>, set<vector<char>>> &learnts,
-		char &useless)
+		set<vector<int>> &linear_constraints, char &useless)
 {
+	auto e = equations[ind];
 	int x = dsu[e.x];
 	int y = dsu[e.y];
 	int z = dsu[e.z];
@@ -990,30 +960,72 @@ char propagation(const AndEquation &e,
 		return 0;
 	}
 
+	useless = 0;
+
 	if (y > z)
 		swap(y, z);
-	pair <int, int> key = {y, z};
+	pair<int, int> key = {y & -2, z & -2};
 
 	auto it = gate_pairs.find(key);
 	char res = 0;
-	if (it != gate_pairs.end()) {
-		if (dsu[it -> second] != x) {
-			join_sets(it -> second, x, vars_values, is_def, dsu, classes);
-			it -> second = dsu[x];
-			res = 1;
-			useless = 1;
+	if (it == gate_pairs.end()) {
+		gate_pairs[key] = ind;
+		// res = 0;
+		// useless = 0;
+	}
+	else if (it -> second == ind) {
+		// res = 0;
+		// useless = 0;
+	}
+	else { // it -> second != ind
+		int j = it -> second;
+		auto f = equations[j];
+
+		int _x = dsu[f.x], _y = dsu[f.y], _z = dsu[f.z];
+		if (_y > _z)
+			swap(_y, _z);
+
+		int id = ((y & 1) << 1) ^ (z & 1);
+		int _id = ((_y & 1) << 1) ^ (_z & 1) ^ id;
+
+		if (_id == 0) { // x +_x = yz + yz = 0
+			if (_x != x) {
+				join_sets(x, _x, vars_values, is_def, dsu, classes);
+				useless = 1;
+				res = 1;
+			}
+			// else {
+			// 	res = 0;
+			// 	useless = 0;
+			// }
 		}
 		else {
-			useless = 0;
+			vector<int> vars;
+
+			if (_id == 1) // x + _x = yz + y(z + 1) = yz + yz + y = y
+				vars = {x, _x, y};
+			else if (_id == 2) // x + _x = yz + (y + 1)z = yz + z + yz = z
+				vars = {x, _x, z};
+			else // _id == 3, x + _x = yz + (y + 1)(z + 1) = yz + yz + y + z + 1 = y + (z + 1)
+				vars = {x, _x, y, z ^ 1};
+
+			int rem = 0;
+			for (auto &var: vars) {
+				rem ^= var & 1;
+				var &= -2;
+			}
+			sort(all(vars));
+			vars[0] ^= rem;
+
+			
+			if (linear_constraints.insert(vars).second)
+				res = 1;
+			useless = 1;
 		}
 	}
-	else {
-		gate_pairs[key] = x;
-		res = 1;
-		useless = 0;
-	}
+
 	char u;
-	res |= propagation(e, vars_values, is_def, dsu, classes, learnts, u);
+	res |= propagation(ind, vars_values, is_def, dsu, classes, learnts, u);
 	useless |= u;
 	return res;
 }
@@ -1340,6 +1352,7 @@ char analyze_equations(vector<char> &vars_values, vector<char> &is_def,
 		vector<int> &dsu, vector<vector<int>> &classes,
 		map<pair <int, int>, int> &gate_pairs,
 		map<vector<int>, set<vector<char>>> &learnts,
+		set<vector<int>> &linear_constraints,
 		vector<char> &useless_equations)
 {
 	char res = 0;
@@ -1349,9 +1362,9 @@ char analyze_equations(vector<char> &vars_values, vector<char> &is_def,
 			continue;
 
 		char useless;
-		auto e = equations[i];
-		res |= propagation(e, vars_values, is_def,
-			dsu, classes, gate_pairs, learnts, useless);
+		res |= propagation(i, vars_values, is_def,
+			dsu, classes, gate_pairs, learnts,
+			linear_constraints, useless);
 		if (useless) {
 			useless_equations[i] = 1;
 			// TODO: STORE equations COPY IN list<AndEquation> AND ERASE e FROM IT HERE
@@ -1398,7 +1411,7 @@ void solve(char &a, vector<char> &vars_values, vector<char> &is_def)
 
 		while (true) {
 			cnt = analyze_equations(vars_values, is_def, dsu, classes,
-				gate_pairs, learnts, useless_equations);
+				gate_pairs, learnts, linear_constraints, useless_equations);
 
 			vector<vector<int>> relations;
 			simple_linear_propagation(linear_constraints, relations, vars_values, is_def, dsu);
@@ -1452,7 +1465,7 @@ void find_output(char &a, vector<char> &vars_values, vector<char> &is_def)
 		
 		while (true) {
 			cnt = analyze_equations(vars_values, is_def, dsu, classes,
-				gate_pairs, learnts, useless_equations);
+				gate_pairs, learnts, linear_constraints, useless_equations);
 			
 			vector<vector<int>> relations;
 
